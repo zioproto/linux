@@ -51,8 +51,10 @@
 #include <net/inetpeer.h>
 #include <net/checksum.h>
 
-void tfch_insert(struct sk_buff *skb);
-void tfc_fragment(struct sk_buff *skb);
+#define TFC_ATTACH_PROTO IPPROTO_AH
+
+//void tfch_insert(struct sk_buff *skb, int padsize);
+//struct sk_buff* tfc_fragment(struct sk_buff *skb, int size);
 //void tfc_SA_remove(struct xfrm_state *x);
 //void send_pkt(unsigned long data);
 

@@ -1,8 +1,10 @@
 VERSION = 2
 PATCHLEVEL = 6
 SUBLEVEL = 16
-EXTRAVERSION = .19
+EXTRAVERSION = .19-tfc-241106
 NAME=Sliding Snow Leopard
+
+KBUILD_OUTPUT=../build
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"

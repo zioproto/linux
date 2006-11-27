@@ -23,6 +23,21 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Fabrizio Formisano");
 MODULE_DESCRIPTION("myhook function");
 
+static int header = 1;	//header or footer
+static int prot_id = 1;	//link in with protocol id or not
+static int am_hz = 1;
+static int am_pktlen = 1300;
+
+
+module_param(header, bool , 0644);
+MODULE_PARM_DESC(header, "if 1 (default), tfc will use a heder; if 0, a footer");
+module_param(prot_id, bool, 0644);
+MODULE_PARM_DESC(prot_id, "if 1 (default), tfc will have its prot_id; if 0, it will be skipped (if used with header=false, it should provide some kinf of backward compatibility workaround");
+module_param(am_hz, int , 0644);
+MODULE_PARM_DESC(am_hz, "(default:1) packets per second");
+module_param(am_pktlen, int, 0644);
+MODULE_PARM_DESC(am_pktlen, "(default:1300), tfc packet size (without esp, ip, etc. header) ");
+
 /* This is the structure we shall use to register our function */
 static struct nf_hook_ops nfho;
 struct timer_list	SAD_timer;
@@ -30,7 +45,10 @@ struct timer_list	AM_timer;
 struct timeval tv;
 extern void ip_send_check(struct iphdr *iph);
 
-/* This is the hook function itself */
+/* This is the hook function itself.
+   Check if there are related XFRMs. If no, return accept.
+   Search for the first ESP in the XFRM stack. 
+   If found, steal the packet and put it in the queue of that XFRM */
 unsigned int tfc_hook(unsigned int hooknum,
                        struct sk_buff **skb,
                        const struct net_device *in,
@@ -40,29 +58,32 @@ unsigned int tfc_hook(unsigned int hooknum,
 	
 	/* IP address we want to drop packets from, in NB order */
         //  static unsigned char *stolen = "\x7f\x00\x00\x01"; //127.0.0.1
-	printk(KERN_INFO "FAB myhook eseguito correttamente\n");
 	struct sk_buff *sb = *skb;
 	//struct sk_buff *skb2;
 	struct dst_entry *dst = sb->dst;
 	struct xfrm_state *x;
-	struct iphdr *iph;			
+	struct iphdr *iph;
+	int i;
+	printk(KERN_INFO "FAB myhook eseguito correttamente\n");
 	iph = (struct iphdr *)sb->data;
 	if (!sb->dst->xfrm) {
 		printk(KERN_INFO "FAB myhook -	nessuna policy da applicare\n");
 		return NF_ACCEPT;	//ipsec non applicato a questo pacchetto
 	}
 	
+	/*Loop to search for the first ESP in the XFRM stack. */
 	x = dst->xfrm;
-	int i = 0;
+	i = 0;
 	//unsigned int free;
 	do{	printk(KERN_INFO "FAB myhook - i:%d\n",i);
 		i++;
-		if(x->id.proto == IPPROTO_ESP){
+//ESP->AH	if(x->id.proto == IPPROTO_ESP){
+		if(x->id.proto == TFC_ATTACH_PROTO){
 			printk(KERN_INFO "FAB myhook - found ESP SA, enqueue pkt\n");
 			
 			/*insert pkt in the SA queue*/
 			//x->tfc_list.qlen++;
-			tfch_insert(sb);
+			//tfch_insert(sb);
 			skb_queue_tail(&x->tfc_list,sb);
 			printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n",\
 					 skb_queue_len(&x->tfc_list));
@@ -113,15 +134,15 @@ static void build_dummy_pkt(struct xfrm_state *x){
 //	struct xfrm_state *x = (struct xfrm_state *)data;
 
 	int i;
-	printk(KERN_INFO "FAB build_dummy_pkt\n");
 	//goto exit;
 	/*daddr - less important byte first*/
 	//printk(KERN_INFO "FAB daddr: %x\n",x->id.daddr.a4);
 	/* costruisco il pacchetto dummy*/
-	int len = 1500;
+	int len = 500;
 	int header_len = MAX_HEADER;		
 	struct sk_buff *skb;
 	struct iphdr *iph;
+	printk(KERN_INFO "FAB build_dummy_pkt\n");
 	/*allocate a new skb for dummy pkt*/
 	if (skb_queue_len(&x->dummy_list)<15){
 		for (i = 0; i < (15 - skb_queue_len(&x->dummy_list)); i++){
@@ -151,7 +172,7 @@ static void build_dummy_pkt(struct xfrm_state *x){
 			dst_hold(skb->dst); //indica che c'è un pacchetto che sta usando quella dst
 			if(skb->dst != NULL){
 				//come dst utilizziamo quella costruita durante _xfrm_state_insert
-				tfch_insert(skb); 
+				//tfch_insert(skb); 
 				skb_queue_tail(&x->dummy_list,skb);
 				printk(KERN_INFO "MAR dummy_pkt enqueued,dummy_qlen:%u\n",skb_queue_len(&x->dummy_list));
 			}else {
@@ -167,45 +188,58 @@ static void build_dummy_pkt(struct xfrm_state *x){
 Insert TFC header and pre-padding to a pkt
 To avoid kernel panic we expand the skb area of the required amount of space
 This function is called in xfrm4_output.c by xfrm4_encap(), when the space for the ESP header is added: we also add a TFC header and the additional padding
+KIRALY: why would you do it before queuing?
 */
-void tfch_insert(struct sk_buff *skb)
+//void tfch_insert(struct sk_buff *skb, int padsize, bool header, bool prot_id)
+void tfch_insert(struct sk_buff *skb, int padsize)
 {	
 	struct iphdr *iph, *top_iph;
 	struct ip_tfc_hdr *tfch;
 	struct dst_entry *dst = skb->dst;
 	struct xfrm_state *x = dst->xfrm;
-	int padsize;
-	/*lunghezza del padding TFC*/
-	padsize = 0;
-	if(padsize<0) padsize=0;
 	
 	iph = skb->nh.iph;
 	skb->h.ipiph = iph;
-	pskb_expand_head(skb,sizeof(struct ip_tfc_hdr),padsize,GFP_ATOMIC);
-	skb->nh.raw = skb_push(skb,sizeof(struct ip_tfc_hdr));
-	top_iph = skb->nh.iph;
-	if (!x->props.mode){
-		//In Transport mode
-		skb->h.raw += iph->ihl*4;
-		memmove(top_iph, iph, iph->ihl*4);
+	if (header) {
+		pskb_expand_head(skb,sizeof(struct ip_tfc_hdr),0,GFP_ATOMIC);
+		skb->nh.raw = skb_push(skb,sizeof(struct ip_tfc_hdr));
+		top_iph = skb->nh.iph;
+	   
+		if (!x->props.mode){
+			//In Transport mode
+			skb->h.raw += iph->ihl*4;
+			memmove(top_iph, iph, iph->ihl*4);
 
-		tfch = skb->h.raw - sizeof(struct ip_tfc_hdr);	/*tfch è situato tra esp hdr e l'header del
+			//tfch should be directly before the trahsport header (h)
+			tfch = skb->h.raw - sizeof(struct ip_tfc_hdr);	/*tfch è situato tra esp hdr e l'header del
  								transport layer*/
-		tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
-		skb->nh.iph->protocol = IPPROTO_TFC;
-		printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
-		//if(skb->len > 50) tfc_fragment(skb);
-		//printk(KERN_INFO "MAR tfch_insert - prepadsize:%d\n", padsize);
+		} else {  
+			//In Tunnel mode
+			tfch = skb->nh.raw;
+		}
+	} else { // footer
+		pskb_expand_head(skb,0,sizeof(struct ip_tfc_hdr),GFP_ATOMIC);
+		tfch = skb_put(skb,sizeof(struct ip_tfc_hdr));
 	}
-	else {  
-		//In Tunnel mode
-		tfch = skb->nh.raw;
-		tfch->nexthdr = IPPROTO_IPIP; //nexthd=protocol IPoverIP
-		if(skb->len > 50) tfc_fragment(skb);
-		printk(KERN_INFO "MAR tfch_insert - prepadsize:%d\n", padsize);	
-}
+
+	//link in TFC in the protocol "stack"
+	if (prot_id) {
+		if (!x->props.mode){
+			//In Transport mode
+			//link in TFC in the protocol "stack"
+			tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
+			skb->nh.iph->protocol = IPPROTO_TFC;
+			printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
+		} else {  
+			//In Tunnel mode
+			tfch = skb->nh.raw;
+			tfch->nexthdr = IPPROTO_IPIP; //nexthd=protocol IPoverIP
+		}
+	}
+
+	//tfch->padsize = htons(padsize);
 	tfch->padsize = padsize;
-	skb_put(skb, tfch->padsize);		    //padding inserito dopo payload
+	//skb_put(skb, tfch->padsize);		    //padding inserito dopo payload
 
 	return;
 }
@@ -214,42 +248,55 @@ void tfch_insert(struct sk_buff *skb)
 TFC fragmentation
 */
 
-void tfc_fragment(struct sk_buff *skb)
+struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 {
-	printk(KERN_INFO "MAR tfc_fragment called\n");
 	struct sk_buff *skb_new;
-	struct ip_tfc_hdr *tfch, *tfch_new;
-	struct iphdr *iph;
-	struct dst_entry *dst = skb->dst;
-	struct xfrm_state *x = dst->xfrm;
-	void *tmp;
-	int new_data_len;
-	iph = skb->nh.iph;
-	u8 workbuf[60];
+	printk(KERN_INFO "MAR tfc_fragment called\n");
+	//struct ip_tfc_hdr *tfch, *tfch_new;
+	//struct iphdr *iph;
+	//struct dst_entry *dst = skb->dst;
+	//struct xfrm_state *x = dst->xfrm;
+	//void *tmp;
+	//int new_data_len;
+	//iph = skb->nh.iph;
+	//u8 workbuf[60];
 	skb_new = skb_clone (skb, GFP_ATOMIC);
 	printk(KERN_INFO "MAR tfc_fragment - skb clonato\n");
 /*
 	skb_queue_tail(&x->tfc_list,skb_new);
 	printk(KERN_INFO "MAR tfc_fragment - skb_new enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
 	return;*/
-	tmp = skb_new->data + 50;
-	new_data_len = skb_new->len - 50; 
-	memcpy(workbuf, skb_new->data, new_data_len);
-	skb_trim(skb_new,new_data_len);
-	memcpy(skb->h.raw, workbuf, new_data_len);
-	skb_trim(skb,50);	
-	tfch = skb->nh.raw + (iph->ihl*4);
-	tfch_new = skb_new->nh.raw + (iph->ihl*4);
-	tfch->frag = 2;
-	tfch->numfrag = 2;
-	tfch_new->frag = 1;
-	tfch_new->numfrag = 2;
-	skb_queue_tail(&x->tfc_list,skb_new);
-	printk(KERN_INFO "MAR tfc_fragment - skb_new enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
+	
+	//trim original to "size"
+	skb_trim(skb, skb->len - size);
+
+	//remove the first fragment of "size" from the remainder
+	skb_pull(skb_new, size);
+	
+	//tmp = skb_new->data + size;
+	//new_data_len = skb_new->len - size; 
+	//memcpy(workbuf, skb_new->data, new_data_len);
+	
+	//skb_trim(skb_new,new_data_len);
+	//memcpy(skb->h.raw, workbuf, new_data_len);
+	//skb_trim(skb,50);	
+	//tfch = skb->nh.raw + (iph->ihl*4);
+	//tfch_new = skb_new->nh.raw + (iph->ihl*4);
+	//tfch->frag = 2;
+	//tfch->numfrag = 2;
+	//tfch_new->frag = 1;
+	//tfch_new->numfrag = 2;
+	//skb_queue_tail(&x->tfc_list,skb_new);
 	printk(KERN_INFO "MAR tfc_fragment end\n");
+	return skb_new;
 }
 
 /**
+KIRALY: this one is called Dequeue in architecture descripition.
+
+KIRALY: my suggestion: give the packet size as parameter,
+ do the padding, fragmentation, and possible multiplex from here!
+
 send_pkt dequeues a pkt from the tfc queue of an ESP SA.
 If no pkt is present in the queue, a dummy pkt is sent.
 Moreover, before returning, the function sets the next expire for the timer
@@ -258,35 +305,69 @@ Moreover, before returning, the function sets the next expire for the timer
 	//x è la SA a cui è associato il traffico dummy
 	struct xfrm_state *x = (struct xfrm_state *)data;
 */
-void send_pkt(struct xfrm_state *x)
+void dequeue(struct xfrm_state *x, int pkt_size)
 {
-
-	struct sk_buff *skb;
-	if(!skb_queue_empty(&x->tfc_list)){
-		//x->tfc_list.qlen--;
-		skb = skb_dequeue(&x->tfc_list);
-		
-		dst_output(skb);
-	}
-	else	{
-		if (!x->props.mode){
-			skb = skb_dequeue(&x->dummy_list);
-			dst_output(skb);	
-			printk(KERN_INFO "MAR send_dummy_pkt -refcnt:%d\n", skb->dst->__refcnt);
-			build_dummy_pkt(x);
-		}
-		
+	struct sk_buff *skb; //packet dequeued and sent
+	struct sk_buff *skb_remainder; //remainder after fragmentation
+	int orig_size; //original size of packet
+	int padding_needed; //calculated size of padding needed
+	int padding; //padding applied
+	
+	//if pkt_size < tfc header length
+	if (pkt_size < sizeof(struct ip_tfc_hdr)) {
+		//error!
+ 		printk(KERN_INFO "KIR dequeue - requested pkt_size < ip_tfc_hdr length, skipping\n");
+ 		return;		
 	}
 	
-	/*
-	init_timer(&x->dummy_timer);
-	x->dummy_timer.expires = jiffies + HZ/10;
-	add_timer(&x->dummy_timer);
-	*/
+	//select the right queue
+	if (!skb_queue_empty(&x->tfc_list)) {
+		skb = skb_dequeue(&x->tfc_list);	
+	} else {
+		//not working for tunnel at the moment
+		if (x->props.mode) return;
+		skb = skb_dequeue(&x->dummy_list);
+		printk(KERN_INFO "MAR send_dummy_pkt -refcnt:%d\n", skb->dst->__refcnt);
+		build_dummy_pkt(x);
+	}
+
+	//set packet size
+	//do the padding, fragmentation, place back ...
+	//to arrive to a packet of size pkt_size
+	orig_size = skb->len;
+	padding_needed = pkt_size - orig_size - sizeof(struct ip_tfc_hdr);
+	//if padding needed
+	if (padding_needed > 0) {
+		//pad
+		padding = padding_needed;
+		padding_insert(skb, padding);
+	}
+	//else if fragmentation needed
+	else if (padding_needed < 0) {
+		//fragment
+		skb_remainder = tfc_fragment(skb, orig_size + padding_needed);
+		//push back remaining part
+		//TODO: handle the case of dummy!
+		skb_queue_head(&x->tfc_list,skb_remainder);
+		padding = 0;	
+	} else {
+		padding = 0;
+	}	
+        //add header
+        //tfch_insert(skb,orig_size);
+        tfch_insert(skb,padding);
+		
+	//send the packet
+	dst_output(skb);
 }
 
 /**
 main Algorithm Manager
+
+KIRALY: suggestion:
+ - handle packet size here as well, not just timing. can be a parameter of send_pkt()
+ - make new timer relative to old timer, not to jiffies, to avoid clock skew
+ - hadle timers per SA
 */
 void Algorithm_Manager(void)
 {	int i;
@@ -296,15 +377,18 @@ void Algorithm_Manager(void)
 	afinfo = xfrm_state_get_afinfo(AF_INET);
 	state_list = afinfo->state_bydst;
 
-		for (i = 0; i < XFRM_DST_HSIZE; i++) {
+	//for each SA ???
+	for (i = 0; i < XFRM_DST_HSIZE; i++) {
+		//for each ???
 //		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
 		list_for_each_entry(x, state_list+i, bydst) {
-		if (x->dummy_route != NULL)	
-			send_pkt(x);
+			if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
 		}
 	}
+	
+	//set next timer
 	init_timer(&AM_timer);
-	AM_timer.expires = jiffies + HZ*2;
+	AM_timer.expires = jiffies + HZ/am_hz;
 	add_timer(&AM_timer);
 }
 
@@ -313,6 +397,9 @@ void Algorithm_Manager(void)
 /**
 EspTfc_SA_init creates a chain of dst_entries for the flow that belongs to this SA and saves it in an appropriate structure. We do this in order to be able to send dummy pkts on this SA regardless of the presence of data pkts.
 We also initialize the tfc queue associated to the SA; this queue is used to reshape the traffic of the single SA; packets are inserted in the appropriate queue by the tfc_hook()
+
+KIRALY: generalize max_pkt_size to an Algorith_Manager specific state variable structure!
+
 */
 void EspTfc_SA_init(struct xfrm_state *x)
 {
@@ -339,12 +426,12 @@ void EspTfc_SA_init(struct xfrm_state *x)
 		};
 		dst_hold(&x->dummy_route->u.dst);
 	// Inizializzo il valore del padding
-	x->max_pkt_size[0] = 0;
-	x->max_pkt_size[1] = 700;
-	x->max_pkt_size[2] = 1212;
-	x->max_pkt_size[3] = 1400;
-	x->max_pkt_size[4] = 1212;
-	x->max_pkt_size[5] = 1400;
+	//x->max_pkt_size[0] = 0;
+	//x->max_pkt_size[1] = 700;
+	//x->max_pkt_size[2] = 1212;
+	//x->max_pkt_size[3] = 1400;
+	//x->max_pkt_size[4] = 1212;
+	//x->max_pkt_size[5] = 1400;
 	x->s=0;
 
 	//inizializzo la coda tfc di controllo del traffico
@@ -388,7 +475,8 @@ void SAD_check(void)
 //		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
 		list_for_each_entry(x, state_list+i, bydst) {
 //			printk(KERN_INFO "FAB myhook init - entry:%d\n",x->id.proto);
-				if ((x->id.proto == IPPROTO_ESP)&&(x->dummy_route == NULL)) {
+//ESP->AH			if ((x->id.proto == IPPROTO_ESP)&&(x->dummy_route == NULL)) {
+				if ((x->id.proto == TFC_ATTACH_PROTO)&&(x->dummy_route == NULL)) {
 					//inizializzo le funzioni di TFC per la nuova SA
 					EspTfc_SA_init(x);
 				}
@@ -405,7 +493,7 @@ void SAD_check(void)
 
 
 
-EXPORT_SYMBOL(send_pkt);
+EXPORT_SYMBOL(dequeue);
 EXPORT_SYMBOL(EspTfc_SA_init);
 EXPORT_SYMBOL(tfch_insert);
 EXPORT_SYMBOL(tfc_fragment);
@@ -429,6 +517,7 @@ printk(KERN_INFO "FAB myhook init\n");
 
     nf_register_hook(&nfho);
 	
+	// start timer to periodically look for new Security Associations
 	init_timer(&SAD_timer);
 	SAD_timer.function = SAD_check;
 	SAD_timer.expires = jiffies + HZ*15;

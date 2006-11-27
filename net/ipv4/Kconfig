@@ -405,6 +405,8 @@ config INET_IPCOMP
 	  If unsure, say Y.
 
 config MYHOOK
+	select XFRM
+	select NETFILTER
 	tristate "TFC MYHOOK"
 	help
 		say YES :-)

@@ -157,7 +157,7 @@ struct xfrm_state
 	struct sk_buff_head	tfc_list;
 //Marco
 	struct sk_buff_head	dummy_list;
-	int max_pkt_size[6];
+	//int max_pkt_size[6];
 	int s;
 };
 

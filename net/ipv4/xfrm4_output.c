@@ -47,14 +47,15 @@ static void xfrm4_encap(struct sk_buff *skb)
 	se la SA di tipo ESP richiede di applicare TFC per fare padding
 	*/
 
-	if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
-		padding_insert(skb);
+	//KIRALY: we have already done the padding, commented out
+	//if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
+		//padding_insert(skb);
 		//tfc_insert(skb);
 
 	iph = skb->nh.iph;
 	skb->h.ipiph = iph;
 	printk(KERN_INFO "MAR iph->protocol:%d\n", iph->protocol);
-	//printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",\
+	//printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",
 	//		skb->nh.iph->protocol, skb->nh.iph);
 	
 	skb->nh.raw = skb_push(skb, x->props.header_len);
@@ -91,7 +92,9 @@ static void xfrm4_encap(struct sk_buff *skb)
 	top_iph->saddr = x->props.saddr.a4;
 	top_iph->daddr = x->id.daddr.a4;
 	
-	if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
+	//fabrizio
+//ESP->AH	if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
+	if((x->id.proto == IPPROTO_AH) && TFC_APPLY)
 		top_iph->protocol = IPPROTO_TFC;
 	else	
 		top_iph->protocol = IPPROTO_IPIP;

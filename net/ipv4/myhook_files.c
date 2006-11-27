@@ -1,6 +1,8 @@
 #include <net/my_tfc.h>
 
-int build_padding(struct sk_buff *skb)
+/*KIRALY: handle state update in the Algorithm_Manager, not here!*/
+
+/*int build_padding(struct sk_buff *skb)
 {	int mode = 0;
 	int padsize;
 	struct dst_entry *dst = skb->dst;
@@ -16,6 +18,8 @@ int build_padding(struct sk_buff *skb)
 		return padsize;
 	}
 	// Andamento del padding tipo seno
+	//(x->s) ++;
+	//(x->s) %= 6;
 	switch (x->s){
 		case 0: //x->max_pkt_size = 700;
 			x->s = 1;
@@ -35,33 +39,32 @@ int build_padding(struct sk_buff *skb)
 		case 5: //x->max_pkt_size = 0;
 			x->s = 0;
 			break;
-		
 	}
 	printk(KERN_INFO "MAR padding - next-max_pkt_size: %d\n", x->max_pkt_size[x->s]);
 	
-	/*x->max_pkt_size += x->s * 10;
-	if(x->max_pkt_size > 1400) x->s = -1;
-	if(x->max_pkt_size == 0) x->s = 1;*/
+	//x->max_pkt_size += x->s * 10;
+	//if(x->max_pkt_size > 1400) x->s = -1;
+	//if(x->max_pkt_size == 0) x->s = 1;
 	return padsize;
 }
+*/
 
-void padding_insert(struct sk_buff *skb)
+void padding_insert(struct sk_buff *skb, int padsize)
 {
-	struct ip_tfc_hdr *tfch;
-	struct iphdr *iph;
-	int padsize;
-	padsize = build_padding(skb);
-	if(padsize<0) padsize=0;
+	//struct ip_tfc_hdr *tfch;
+	//struct iphdr *iph;
+
 	//iph = skb->nh.iph;
 	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
 	pskb_expand_head(skb,0,padsize,GFP_ATOMIC);
 	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
-	tfch = skb->nh.raw + (iph->ihl*4);
-	tfch->padsize = padsize;
-	skb_put(skb, tfch->padsize);
+	skb_put(skb, padsize);	
 	printk(KERN_INFO "MAR padding_insert - padlen: %d,\n", padsize);
-	return;
-	
+
+	//update header
+	//tfch = skb->nh.raw + (iph->ihl*4);
+	//tfch->padsize = padsize;
+	return;	
 }
 
 
@@ -103,5 +106,5 @@ void tfc_remove(struct sk_buff *skb)
 
 
 EXPORT_SYMBOL(tfc_remove);
-EXPORT_SYMBOL(build_padding);
+//EXPORT_SYMBOL(build_padding);
 EXPORT_SYMBOL(padding_insert);

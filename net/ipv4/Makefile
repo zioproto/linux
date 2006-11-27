@@ -46,5 +46,4 @@ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
 		      xfrm4_output.o
 
 #Marco
-obj-$(CONFIG_MYHOOK) += myhook.o
-obj-y += myhook_files.o
+obj-$(CONFIG_MYHOOK) += myhook.o myhook_files.o
