@@ -392,7 +392,14 @@ void Algorithm_Manager(void)
 	add_timer(&AM_timer);
 }
 
-
+void SA_Logic(struct xfrm_state *x)
+{
+	if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
+	init_timer(&x->tfc_alg_timer);
+	x->tfc_alg_timer.expires = jiffies + HZ/10;
+	add_timer(&x->tfc_alg_timer);
+	
+}
 
 /**
 EspTfc_SA_init creates a chain of dst_entries for the flow that belongs to this SA and saves it in an appropriate structure. We do this in order to be able to send dummy pkts on this SA regardless of the presence of data pkts.
@@ -432,7 +439,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	//x->max_pkt_size[3] = 1400;
 	//x->max_pkt_size[4] = 1212;
 	//x->max_pkt_size[5] = 1400;
-	x->s=0;
+	//x->s=0;
 
 	//inizializzo la coda tfc di controllo del traffico
 	skb_queue_head_init(&x->tfc_list);
@@ -441,7 +448,12 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	skb_queue_head_init(&x->dummy_list);
 	printk(KERN_INFO "MAR dummy_list init \n");
 		build_dummy_pkt(x);
-	
+	//Inizializzo il timer di controllo dell'SA
+	init_timer(&x->tfc_alg_timer);
+	x->tfc_alg_timer.data = x;
+	x->tfc_alg_timer.function = SA_Logic;
+	x->tfc_alg_timer.expires = jiffies + HZ/10;
+	add_timer(&x->tfc_alg_timer);
 	return;
 	
 }
@@ -523,12 +535,12 @@ printk(KERN_INFO "FAB myhook init\n");
 	SAD_timer.expires = jiffies + HZ*15;
 	add_timer(&SAD_timer);
 	
-	// Inizializzo il timer della funzione Algorithm Manager
+/*	// Inizializzo il timer della funzione Algorithm Manager
 	init_timer(&AM_timer);
 	AM_timer.function = Algorithm_Manager;
 	AM_timer.expires  = jiffies + HZ;
 	add_timer(&AM_timer);
-
+*/
 	//spin_unlock_bh(&xfrm_state_lock);
 	//wake_up(&km_waitq);
 
@@ -539,7 +551,7 @@ printk(KERN_INFO "FAB myhook init\n");
 static void __exit fini(void)
 {printk(KERN_INFO "FAB myhook fini\n");
 	del_timer(&SAD_timer);
-	del_timer(&AM_timer);
+	//del_timer(&AM_timer);
 	printk(KERN_INFO "MAR timer SAD rimosso\n");
 	//to add: remove TFC queues for all SA: to do this, wait for the queue to be empty.
 	nf_unregister_hook(&nfho);

@@ -222,7 +222,7 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 
 static int __xfrm_state_delete(struct xfrm_state *x)
 {	//Marco
-	//del_timer(&x->dummy_timer);
+	del_timer(&x->tfc_alg_timer);
 	//printk(KERN_INFO "MAR _xfrm_state_delete\n");
 	//Svuoto la coda dei pacchetti
 	//printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));

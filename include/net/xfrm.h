@@ -151,14 +151,12 @@ struct xfrm_state
 	/* Private data of this transformer, format is opaque,
 	 * interpreted by xfrm_type methods. */
 	void			*data;
-//fabrizio
-	struct timer_list	dummy_timer;
+//Marco
+	/* Parameters of TFC */
+	struct timer_list	tfc_alg_timer;
 	struct rtable		*dummy_route;
 	struct sk_buff_head	tfc_list;
-//Marco
 	struct sk_buff_head	dummy_list;
-	//int max_pkt_size[6];
-	int s;
 };
 
 enum {
