@@ -191,7 +191,7 @@ This function is called in xfrm4_output.c by xfrm4_encap(), when the space for t
 KIRALY: why would you do it before queuing?
 */
 //void tfch_insert(struct sk_buff *skb, int padsize, bool header, bool prot_id)
-void tfch_insert(struct sk_buff *skb, int padsize)
+void tfch_insert(struct sk_buff *skb, int payloadsize)
 {	
 	struct iphdr *iph, *top_iph;
 	struct ip_tfc_hdr *tfch;
@@ -229,7 +229,7 @@ void tfch_insert(struct sk_buff *skb, int padsize)
 			//link in TFC in the protocol "stack"
 			tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
 			skb->nh.iph->protocol = IPPROTO_TFC;
-			printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
+			printk(KERN_INFO "MAR tfch->nexthdr: %hhd, iph->protocol:%hhd\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} else {  
 			//In Tunnel mode
 			tfch = skb->nh.raw;
@@ -238,7 +238,7 @@ void tfch_insert(struct sk_buff *skb, int padsize)
 	}
 
 	//tfch->padsize = htons(padsize);
-	tfch->padsize = padsize;
+	tfch->payloadsize = (u_int16_t) payloadsize;
 	//skb_put(skb, tfch->padsize);		    //padding inserito dopo payload
 
 	return;
@@ -311,7 +311,7 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 	struct sk_buff *skb_remainder; //remainder after fragmentation
 	int orig_size; //original size of packet
 	int padding_needed; //calculated size of padding needed
-	int padding; //padding applied
+	int payload_size; //payload_size inside TFC (the rest is padding)
 	
 	//if pkt_size < tfc header length
 	if (pkt_size < sizeof(struct ip_tfc_hdr)) {
@@ -339,23 +339,23 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 	//if padding needed
 	if (padding_needed > 0) {
 		//pad
-		padding = padding_needed;
-		padding_insert(skb, padding);
+		payload_size = orig_size;
+		padding_insert(skb, padding_needed);
 	}
 	//else if fragmentation needed
 	else if (padding_needed < 0) {
 		//fragment
-		skb_remainder = tfc_fragment(skb, orig_size + padding_needed);
+		payload_size = orig_size + padding_needed;
+		skb_remainder = tfc_fragment(skb, payload_size);
 		//push back remaining part
 		//TODO: handle the case of dummy!
 		skb_queue_head(&x->tfc_list,skb_remainder);
-		padding = 0;	
 	} else {
-		padding = 0;
+		payload_size = orig_size;
 	}	
         //add header
         //tfch_insert(skb,orig_size);
-        tfch_insert(skb,padding);
+        tfch_insert(skb,payload_size);
 		
 	//send the packet
 	dst_output(skb);

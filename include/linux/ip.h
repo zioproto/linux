@@ -125,9 +125,7 @@ struct ip_comp_hdr {
 struct ip_tfc_hdr {
 	__u8 nexthdr;
 	__u8 flags;
-	__u8 frag;
-	__u8 numfrag;
-	__u16 padsize;
+	__u16 payloadsize;
 };
 
 #endif	/* _LINUX_IP_H */

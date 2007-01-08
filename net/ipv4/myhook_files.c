@@ -48,9 +48,11 @@
 	return padsize;
 }
 */
-
+// TODO: fill padding
 void padding_insert(struct sk_buff *skb, int padsize)
 {
+	unsigned char * padding_p;
+	
 	//struct ip_tfc_hdr *tfch;
 	//struct iphdr *iph;
 
@@ -58,8 +60,11 @@ void padding_insert(struct sk_buff *skb, int padsize)
 	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
 	pskb_expand_head(skb,0,padsize,GFP_ATOMIC);
 	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
-	skb_put(skb, padsize);	
+	padding_p = skb_put(skb, padsize);	
 	printk(KERN_INFO "MAR padding_insert - padlen: %d,\n", padsize);
+	
+	//fill padding with 0
+	memset(padding_p, 0, padsize);
 
 	//update header
 	//tfch = skb->nh.raw + (iph->ihl*4);
@@ -82,7 +87,7 @@ void tfc_remove(struct sk_buff *skb)
 	printk(KERN_INFO "RICEVUTO PACCHETTO TFC -len:%2d, skb->nh.raw:%x, tfch:%x\n",\
 		skb->len, skb->nh.raw, tfch);
 	skb->nh.iph->protocol = tfch->nexthdr;
-	pskb_trim(skb, skb->len - tfch->padsize);
+	pskb_trim(skb, tfch->payloadsize);
 	memcpy(workbuf, skb->nh.raw, iph->ihl*4);
 
         /*while(i < 20){
