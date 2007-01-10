@@ -234,11 +234,17 @@ struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 	return;*/
 	
 	//trim original to "size"
-	skb_trim(skb, skb->len - size);
-
+	//skb_trim(skb, skb->len - size);
+	skb_trim(skb, size);
+	printk(KERN_INFO "EMA skb trimmato\n");
 	//remove the first fragment of "size" from the remainder
-	skb_pull(skb_new, size);
+	//skb_pull(skb_new, size);
 	
+	memmove(skb_new->data+20, skb_new->data+size, skb->len - size);
+	printk(KERN_INFO "EMA skb_new traslato\n");
+
+	skb_trim(skb_new, skb->len - size + 20);
+	printk(KERN_INFO "EMA skb_new trimmato\n");
 	//tmp = skb_new->data + size;
 	//new_data_len = skb_new->len - size; 
 	//memcpy(workbuf, skb_new->data, new_data_len);
