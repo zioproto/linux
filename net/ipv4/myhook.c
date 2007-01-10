@@ -18,6 +18,7 @@
 #include <linux/skbuff.h>
 
 #include <net/my_tfc.h>
+#include <linux/random.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Fabrizio Formisano");
@@ -25,24 +26,27 @@ MODULE_DESCRIPTION("myhook function");
 
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
-static int am_hz = 1;
+static int algorithm = 1;
+static int sa_hz = 1;
 static int am_pktlen = 1300;
+int a = 0;
+
 
 
 module_param(header, bool , 0644);
 MODULE_PARM_DESC(header, "if 1 (default), tfc will use a heder; if 0, a footer");
 module_param(prot_id, bool, 0644);
 MODULE_PARM_DESC(prot_id, "if 1 (default), tfc will have its prot_id; if 0, it will be skipped (if used with header=false, it should provide some kinf of backward compatibility workaround");
-module_param(am_hz, int , 0644);
-MODULE_PARM_DESC(am_hz, "(default:1) packets per second");
+module_param(algorithm, int , 0644);
+MODULE_PARM_DESC(algorithm, "(default:0) algorithm type, default CBR");
+module_param(sa_hz, int , 0644);
+MODULE_PARM_DESC(sa_hz, "(default:1) packets per second");
 module_param(am_pktlen, int, 0644);
 MODULE_PARM_DESC(am_pktlen, "(default:1300), tfc packet size (without esp, ip, etc. header) ");
 
 /* This is the structure we shall use to register our function */
 static struct nf_hook_ops nfho;
 struct timer_list	SAD_timer;
-struct timer_list	AM_timer;
-struct timeval tv;
 extern void ip_send_check(struct iphdr *iph);
 
 /* This is the hook function itself.
@@ -57,9 +61,7 @@ unsigned int tfc_hook(unsigned int hooknum,
 {
 	
 	/* IP address we want to drop packets from, in NB order */
-        //  static unsigned char *stolen = "\x7f\x00\x00\x01"; //127.0.0.1
 	struct sk_buff *sb = *skb;
-	//struct sk_buff *skb2;
 	struct dst_entry *dst = sb->dst;
 	struct xfrm_state *x;
 	struct iphdr *iph;
@@ -74,20 +76,13 @@ unsigned int tfc_hook(unsigned int hooknum,
 	/*Loop to search for the first ESP in the XFRM stack. */
 	x = dst->xfrm;
 	i = 0;
-	//unsigned int free;
 	do{	printk(KERN_INFO "FAB myhook - i:%d\n",i);
 		i++;
 //ESP->AH	if(x->id.proto == IPPROTO_ESP){
 		if(x->id.proto == TFC_ATTACH_PROTO){
 			printk(KERN_INFO "FAB myhook - found ESP SA, enqueue pkt\n");
-			
-			/*insert pkt in the SA queue*/
-			//x->tfc_list.qlen++;
-			//tfch_insert(sb);
 			skb_queue_tail(&x->tfc_list,sb);
-			printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n",\
-					 skb_queue_len(&x->tfc_list));
-			
+			printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
 			return NF_STOLEN;
 		}
 		dst = dst->child; //scorro la catena di dst_entry
@@ -96,31 +91,6 @@ unsigned int tfc_hook(unsigned int hooknum,
 
 	printk(KERN_INFO "FAB myhook - SA not found\n");
 	return NF_ACCEPT; //abbiamo cercato su tutta la catena di dst_entry senza trovare la SA cercata
- 
-//	printk(KERN_INFO "FAB daddr:%x stolen addr:%x \n", sb->nh.iph->daddr, *(int*)stolen);
-	
-//        if (sb->nh.iph->daddr == *(int*)stolen) {
-		//printk(KERN_INFO "FAB STOLEN packet to... %d.%d.%d.%d\n",
-		 // 	  *stolen, *(stolen + 1),
-		//	  *(stolen + 2), *(stolen + 3));
-		//kfree_skb(sb);
-		//okfn(sb);
-/*		struct timer_container *mycontainer = \
-			(struct timer_container *)kmalloc(sizeof(struct timer_container),GFP_KERNEL);
-		mycontainer->skb = *skb;
-		mycontainer->output = okfn;
-		mycontainer->myself = mycontainer;
-		init_timer(&mycontainer->timer);
-		mycontainer->timer.function = myoutput;
-		mycontainer->timer.data = (unsigned long)mycontainer;//->myself;
-		mycontainer->timer.expires = jiffies + HZ/1000;
-		add_timer(&mycontainer->timer);
-*/		
-		
-//		return NF_STOLEN;
-//              } else {
-//		return NF_ACCEPT;
-//              }
 }
 
 
@@ -131,12 +101,8 @@ pkt
 */
 static void build_dummy_pkt(struct xfrm_state *x){
 	//x è la SA a cui è associato il traffico dummy
-//	struct xfrm_state *x = (struct xfrm_state *)data;
-
 	int i;
-	//goto exit;
 	/*daddr - less important byte first*/
-	//printk(KERN_INFO "FAB daddr: %x\n",x->id.daddr.a4);
 	/* costruisco il pacchetto dummy*/
 	int len = 500;
 	int header_len = MAX_HEADER;		
@@ -247,7 +213,7 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 /**
 TFC fragmentation
 */
-
+//TODO
 struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 {
 	struct sk_buff *skb_new;
@@ -362,42 +328,42 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 }
 
 /**
-main Algorithm Manager
+main SA Logic
 
 KIRALY: suggestion:
  - handle packet size here as well, not just timing. can be a parameter of send_pkt()
  - make new timer relative to old timer, not to jiffies, to avoid clock skew
  - hadle timers per SA
 */
-void Algorithm_Manager(void)
-{	int i;
-	struct xfrm_state *x;
-	struct list_head *state_list;
-	struct xfrm_state_afinfo *afinfo;
-	afinfo = xfrm_state_get_afinfo(AF_INET);
-	state_list = afinfo->state_bydst;
-
-	//for each SA ???
-	for (i = 0; i < XFRM_DST_HSIZE; i++) {
-		//for each ???
-//		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
-		list_for_each_entry(x, state_list+i, bydst) {
-			if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
-		}
-	}
-	
-	//set next timer
-	init_timer(&AM_timer);
-	AM_timer.expires = jiffies + HZ/am_hz;
-	add_timer(&AM_timer);
-}
 
 void SA_Logic(struct xfrm_state *x)
 {
+	unsigned long	rand1;
+	int modulo = 100;
 	if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
+	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
+	switch (x->algorithm){
+		case 0:	break;
+		
+		case 1:	get_random_bytes(&rand1,4);
+			sa_hz = 1 + rand1%modulo;
+			break;
+		case 2: sa_hz = 1 + (a%modulo);
+			a++;
+			if(a>=modulo) a = 0;
+			break;
+		case 3: 
+			break;
+		case 4: 
+			break;
+		case 5: 
+			break;
+	}
+	printk(KERN_INFO "MAR SA_Logic:%u\n", sa_hz);
 	init_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.expires = jiffies + HZ/am_hz;
+	x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
 	add_timer(&x->tfc_alg_timer);
+	
 	
 }
 
@@ -413,7 +379,8 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	/*costruisco una struttura flowi in cui inserisco l'indirizzo sorgente e destinazione 
 	della SA, con cui andiamo a creare la catena di dst_entry e la salviamo in x->dummy_route
 	*/
-	
+	unsigned long	rand1;
+	int modulo = 100;
 	printk(KERN_INFO "FAB dummy_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
 	//fabrizio - creo la rtable per questa SA..mi serve per poter instradare i pacchetti dummy
 		struct flowi fl = { .oif = 0,
@@ -432,15 +399,28 @@ void EspTfc_SA_init(struct xfrm_state *x)
 				return;
 		};
 		dst_hold(&x->dummy_route->u.dst);
-	// Inizializzo il valore del padding
-	//x->max_pkt_size[0] = 0;
-	//x->max_pkt_size[1] = 700;
-	//x->max_pkt_size[2] = 1212;
-	//x->max_pkt_size[3] = 1400;
-	//x->max_pkt_size[4] = 1212;
-	//x->max_pkt_size[5] = 1400;
-	//x->s=0;
-
+	x->algorithm=algorithm;
+	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
+	switch (x->algorithm){
+		//CBR
+		case 0:	break;
+		//Random
+		case 1: get_random_bytes(&rand1,4);
+			sa_hz = 1 + rand1%modulo;
+			break;
+		//Sawtooth
+		case 2: sa_hz = 1 + (a%modulo);
+			a++;
+			if(a>=modulo) a = 0;
+			break;
+		case 3: 
+			break;
+		case 4: 
+			break;
+		case 5: 
+			break;
+	}
+	
 	//inizializzo la coda tfc di controllo del traffico
 	skb_queue_head_init(&x->tfc_list);
 	printk(KERN_INFO "MAR TFC_list init \n");
@@ -452,7 +432,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	init_timer(&x->tfc_alg_timer);
 	x->tfc_alg_timer.data = x;
 	x->tfc_alg_timer.function = SA_Logic;
-	x->tfc_alg_timer.expires = jiffies + HZ/am_hz;
+	x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
 	add_timer(&x->tfc_alg_timer);
 	return;
 	
@@ -509,8 +489,7 @@ EXPORT_SYMBOL(dequeue);
 EXPORT_SYMBOL(EspTfc_SA_init);
 EXPORT_SYMBOL(tfch_insert);
 EXPORT_SYMBOL(tfc_fragment);
-//EXPORT_SYMBOL(build_padding);
-//EXPORT_SYMBOL(tfc_SA_remove);
+
 /**
 ESP richiede il modulo myhook, che quindi viene caricato automaticamente all'avvio, quando le SA non sono ancora definite, per cui non è possibile inizializzare le code e i dummy;inoltre se viene aggiun ta una nuova SA, deve essere possibile inizializzare le funzioni di TFC. Soluzione:
 la funzione di init avvia un timer che periodicamente controlla se ci sono nuove ESP SA e in caso affermativo esegue EspTfc_SA_init
@@ -534,26 +513,13 @@ printk(KERN_INFO "FAB myhook init\n");
 	SAD_timer.function = SAD_check;
 	SAD_timer.expires = jiffies + HZ*15;
 	add_timer(&SAD_timer);
-	
-/*	// Inizializzo il timer della funzione Algorithm Manager
-	init_timer(&AM_timer);
-	AM_timer.function = Algorithm_Manager;
-	AM_timer.expires  = jiffies + HZ;
-	add_timer(&AM_timer);
-*/
-	//spin_unlock_bh(&xfrm_state_lock);
-	//wake_up(&km_waitq);
-
-
 	return 0;
 }
 
 static void __exit fini(void)
 {printk(KERN_INFO "FAB myhook fini\n");
 	del_timer(&SAD_timer);
-	//del_timer(&AM_timer);
 	printk(KERN_INFO "MAR timer SAD rimosso\n");
-	//to add: remove TFC queues for all SA: to do this, wait for the queue to be empty.
 	nf_unregister_hook(&nfho);
 }
 
