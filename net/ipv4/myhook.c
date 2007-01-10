@@ -396,7 +396,7 @@ void SA_Logic(struct xfrm_state *x)
 {
 	if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
 	init_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.expires = jiffies + HZ/10;
+	x->tfc_alg_timer.expires = jiffies + HZ/am_hz;
 	add_timer(&x->tfc_alg_timer);
 	
 }
@@ -452,7 +452,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	init_timer(&x->tfc_alg_timer);
 	x->tfc_alg_timer.data = x;
 	x->tfc_alg_timer.function = SA_Logic;
-	x->tfc_alg_timer.expires = jiffies + HZ/10;
+	x->tfc_alg_timer.expires = jiffies + HZ/am_hz;
 	add_timer(&x->tfc_alg_timer);
 	return;
 	
