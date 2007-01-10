@@ -225,18 +225,17 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 	del_timer(&x->tfc_alg_timer);
 	//printk(KERN_INFO "MAR _xfrm_state_delete\n");
 	//Svuoto la coda dei pacchetti
-	//printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));
-	//while (!skb_queue_empty(&x->tfc_list)){
-	//	skb_dequeue(&x->tfc_list);
-	//	printk(KERN_INFO "MAR pacchetto rimosso\n");
-	//}
+	printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));
+	while (!skb_queue_empty(&x->tfc_list)){
+		skb_dequeue(&x->tfc_list);
+		printk(KERN_INFO "MAR pacchetto rimosso\n");
+	}
 	//Svuoto la coda dei dummy
-	//printk(KERN_INFO "MAR xfrm_state_delete, dummy_qlen:%u\n",skb_queue_len(&x->dummy_list));
-	//while (!skb_queue_empty(&x->dummy_list)){
-	//	skb_dequeue(&x->dummy_list);
-	//	printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
-	//}
-	//tfc_SA_remove(x);
+	printk(KERN_INFO "MAR xfrm_state_delete, dummy_qlen:%u\n",skb_queue_len(&x->dummy_list));
+	while (!skb_queue_empty(&x->dummy_list)){
+		skb_dequeue(&x->dummy_list);
+		printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
+	}
 
 	int err = -ESRCH;
 
