@@ -157,6 +157,7 @@ struct xfrm_state
 	struct rtable		*dummy_route;
 	struct sk_buff_head	tfc_list;
 	struct sk_buff_head	dummy_list;
+	int algorithm;
 };
 
 enum {
