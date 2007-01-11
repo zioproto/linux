@@ -395,11 +395,10 @@ void SA_Logic(struct xfrm_state *x)
 			break;
 	}
 	printk(KERN_INFO "MAR SA_Logic:%u\n", sa_hz);
-	init_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
+	//init_timer(&x->tfc_alg_timer);
+	del_timer(&x->tfc_alg_timer);
+	x->tfc_alg_timer.expires +=  HZ/sa_hz;
 	add_timer(&x->tfc_alg_timer);
-	
-	
 }
 
 /**
@@ -439,7 +438,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	dst_hold(&x->dummy_route->u.dst);
 	x->algorithm=algorithm;
 	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
-	switch (x->algorithm){
+	/*switch (x->algorithm){
 		//CBR
 		case 0:	break;
 		//Random
@@ -458,6 +457,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 		case 5: 
 			break;
 	}
+	*/
 	
 	//inizializzo la coda tfc di controllo del traffico
 	skb_queue_head_init(&x->tfc_list);
@@ -466,12 +466,15 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	skb_queue_head_init(&x->dummy_list);
 	printk(KERN_INFO "MAR dummy_list init \n");
 		build_dummy_pkt(x);
+
 	//Inizializzo il timer di controllo dell'SA
 	init_timer(&x->tfc_alg_timer);
 	x->tfc_alg_timer.data = x;
 	x->tfc_alg_timer.function = SA_Logic;
-	x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
-	add_timer(&x->tfc_alg_timer);
+	//x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
+	x->tfc_alg_timer.expires = jiffies;
+	//add_timer(&x->tfc_alg_timer);
+	SA_Logic(x);
 	return;
 	
 }

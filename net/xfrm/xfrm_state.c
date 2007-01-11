@@ -480,13 +480,13 @@ static struct xfrm_state *__xfrm_find_acq_byseq(u32 seq);
 
 int xfrm_state_add(struct xfrm_state *x)
 {	
-	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_add\n");
-
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int family;
 	int err;
+
+	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_add\n");
 
 	family = x->props.family;
 	afinfo = xfrm_state_get_afinfo(family);
@@ -536,12 +536,13 @@ out:
 EXPORT_SYMBOL(xfrm_state_add);
 
 int xfrm_state_update(struct xfrm_state *x)
-{	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_update\n");
-
+{
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int err;
+
+	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_update\n");
 
 	afinfo = xfrm_state_get_afinfo(x->props.family);
 	if (unlikely(afinfo == NULL))
