@@ -26,11 +26,11 @@ MODULE_DESCRIPTION("myhook function");
 
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
-static int algorithm = 1;
+static int algorithm = 0;
 static int sa_hz = 1;
 static int am_pktlen = 1300;
 int a = 0;
-
+static int dummy = 1;
 
 
 module_param(header, bool , 0644);
@@ -43,6 +43,8 @@ module_param(sa_hz, int , 0644);
 MODULE_PARM_DESC(sa_hz, "(default:1) packets per second");
 module_param(am_pktlen, int, 0644);
 MODULE_PARM_DESC(am_pktlen, "(default:1300), tfc packet size (without esp, ip, etc. header) ");
+module_param(dummy, bool, 0644);
+MODULE_PARM_DESC(dummy, "(default:1), whether to use dummy packets or not");
 
 /* This is the structure we shall use to register our function */
 static struct nf_hook_ops nfho;
@@ -294,20 +296,29 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 	
 	//select the right queue
 	if (!skb_queue_empty(&x->tfc_list)) {
+		//if there is a packet in the queue, take it
 		skb = skb_dequeue(&x->tfc_list);	
-	} else {
-		//not working for tunnel at the moment
+	} else if (dummy) {
+		//otherwise take a dummy if dummy packets are enabled
+		//TODO: not working for tunnel at the moment
 		if (x->props.mode) return;
 		skb = skb_dequeue(&x->dummy_list);
 		printk(KERN_INFO "MAR send_dummy_pkt -refcnt:%d\n", skb->dst->__refcnt);
 		build_dummy_pkt(x);
+	} else {
+		//dummy packets are desabled
+		return;
 	}
 
 	//set packet size
 	//do the padding, fragmentation, place back ...
 	//to arrive to a packet of size pkt_size
-	orig_size = skb->len;
+	
+	//calculate the size of the payload: unfortunately the skb already contains the ip header (or the pseudo header?), so we need to subtract its length
+	orig_size = skb->len - skb->nh.iph->ihl*4;
+	//the required padding (can be negative) is determined by the requested size, the payload_size and the tfc header size
 	padding_needed = pkt_size - orig_size - sizeof(struct ip_tfc_hdr);
+	printk(KERN_INFO "KCS dequeue skb->len:%d orig_size:%d padding_needed:%d\n", skb->len, orig_size, padding_needed);
 	//if padding needed
 	if (padding_needed > 0) {
 		//pad
