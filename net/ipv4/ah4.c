@@ -9,6 +9,9 @@
 #include <net/protocol.h>
 #include <asm/scatterlist.h>
 
+//cskiraly
+//#include <net/myhook_files.h>
+
 
 /* Clear mutable options and find final destination to substitute
  * into IP header for icv calculation. Options are already checked
@@ -115,6 +118,52 @@ error:
 	return err;
 }
 
+void tfc_remove(struct sk_buff *skb)
+{	u8 workbuf[60];
+	//u8 *p;
+        unsigned int i = 0;
+        
+        struct ip_tfc_hdr *tfch;
+	struct iphdr *iph;
+	iph = skb->nh.iph;
+	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
+	printk(KERN_INFO "RICEVUTO PACCHETTO TFC - skblen:%2d, skb->nh.raw:%d, skb->nh.iph:%d, tfch:%d\n",\
+		skb->len, (unsigned char*)skb->nh.raw - skb->data, (unsigned char*)skb->nh.iph - skb->data, (unsigned char*)tfch - skb->data);
+        while(i < 50){
+		printk(KERN_INFO "%x ",*(skb->nh.raw + i));
+		i++;
+		if (!(i%8)) printk(KERN_INFO "\n");
+        }
+	printk(KERN_INFO "\n");
+
+
+	//change protocol from TFC to the next one in iph	
+	skb->nh.iph->protocol = tfch->nexthdr;
+	//cut padding
+	pskb_trim(skb, sizeof(tfch) + tfch->payloadsize);
+	//save ip header in temporary work buffer
+	memcpy(workbuf, skb->nh.raw, iph->ihl*4);
+
+        /*while(i < 20){
+		printk(KERN_INFO "%x ",*(workbuf + i));
+		i++;
+                }
+	printk(KERN_INFO "\nRICEVUTO PACCHETTO TFC,dopo trim -len:%d,iph->protocol:%x,\
+		skb->nh.raw:%x, tfch:%x\n",\
+		skb->len,skb->nh.iph->protocol, skb->nh.raw, tfch);
+	*/
+	skb->h.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
+	skb->nh.raw += sizeof(struct ip_tfc_hdr);
+	memcpy(skb->nh.raw, workbuf, iph->ihl*4);
+	/*printk(KERN_INFO "RICEVUTO PACCHETTO TFC,dopo pull - len:%d, skb->nh.raw:%x,\
+			skb->h.raw:%x, protocol:%x\n",\
+                        skb->len, skb->nh.raw, skb->h.raw, skb->nh.iph->protocol);
+	*/
+	skb->nh.iph->tot_len = htons(skb->len);
+	return;
+}
+
+
 static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct sk_buff *skb)
 {
 	int ah_hlen;
@@ -176,6 +225,10 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	skb->nh.iph->tot_len = htons(skb->len);
 	skb_pull(skb, skb->nh.iph->ihl*4);
 	skb->h.raw = skb->data;
+
+	//cskiraly: TFC removal
+        //if (iph->protocol == IPPROTO_TFC)
+		tfc_remove(skb);
 
 	return 0;
 

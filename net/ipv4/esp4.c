@@ -272,8 +272,8 @@ static int esp_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struc
 	rimuovo l'header tfc e il padding tfc
 	*/
 	
-        if (nexthdr[1] == IPPROTO_TFC)
-		tfc_remove(skb);
+        //if (nexthdr[1] == IPPROTO_TFC)
+	//	tfc_remove(skb);
 
 	return 0;
 
