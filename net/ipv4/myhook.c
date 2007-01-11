@@ -402,7 +402,9 @@ void EspTfc_SA_init(struct xfrm_state *x)
 		if (err) {
 			printk(KERN_INFO "FAB dummy_init - ip_route_output_key\
 				 fallito!\n");
-				return;
+			//cskiraly: set this to null to signal that other structures doesn't have to be destroyed at the end 
+			x->dummy_route = NULL;
+			return;
 		};
 		dst_hold(&x->dummy_route->u.dst);
 	x->algorithm=algorithm;
