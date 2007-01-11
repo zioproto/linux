@@ -26,23 +26,38 @@ MODULE_DESCRIPTION("myhook function");
 
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
-static int algorithm = 0;
+static int delay_algorithm = 1;
+static int size_algorithm = 1;
 static int sa_hz = 1;
 static int am_pktlen = 1300;
+static int min_pktlen = 1000;
+static int max_pktlen = 2000;
 int a = 0;
 static int dummy = 1;
 
-
+//TFC protocol integration parameters
 module_param(header, bool , 0644);
 MODULE_PARM_DESC(header, "if 1 (default), tfc will use a heder; if 0, a footer");
 module_param(prot_id, bool, 0644);
 MODULE_PARM_DESC(prot_id, "if 1 (default), tfc will have its prot_id; if 0, it will be skipped (if used with header=false, it should provide some kinf of backward compatibility workaround");
-module_param(algorithm, int , 0644);
-MODULE_PARM_DESC(algorithm, "(default:0) algorithm type, default CBR");
+
+//packet delay parameters
+module_param(delay_algorithm, int , 0644);
+MODULE_PARM_DESC(delay_algorithm, "(default:1) algorithm type, default CBR");
 module_param(sa_hz, int , 0644);
 MODULE_PARM_DESC(sa_hz, "(default:1) packets per second");
+
+//packet size parameters
+module_param(size_algorithm, int , 0644);
+MODULE_PARM_DESC(size_algorithm, "(default:1) algorithm type");
 module_param(am_pktlen, int, 0644);
 MODULE_PARM_DESC(am_pktlen, "(default:1300), tfc packet size (without esp, ip, etc. header) ");
+module_param(min_pktlen, int, 0644);
+MODULE_PARM_DESC(min_pktlen, "(default:1000), tfc packet size (without esp, ip, etc. header) ");
+module_param(max_pktlen, int, 0644);
+MODULE_PARM_DESC(max_pktlen, "(default:2000), tfc packet size (without esp, ip, etc. header) ");
+
+//dummy gereneration parameters
 module_param(dummy, bool, 0644);
 MODULE_PARM_DESC(dummy, "(default:1), whether to use dummy packets or not");
 
@@ -304,9 +319,12 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 	int orig_size; //original size of packet
 	int padding_needed; //calculated size of padding needed
 	int payload_size; //payload_size inside TFC (the rest is padding)
+	char nop; //packet size should not be changed
+	
+	nop = (pkt_size<0);
 	
 	//if pkt_size < tfc header length
-	if (pkt_size < sizeof(struct ip_tfc_hdr)) {
+	if (!nop && pkt_size < sizeof(struct ip_tfc_hdr)) {
 		//error!
  		printk(KERN_INFO "KIR dequeue - requested pkt_size < ip_tfc_hdr length, skipping\n");
  		return;		
@@ -338,13 +356,13 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 	padding_needed = pkt_size - orig_size - sizeof(struct ip_tfc_hdr);
 	printk(KERN_INFO "KCS dequeue skb->len:%d orig_size:%d padding_needed:%d\n", skb->len, orig_size, padding_needed);
 	//if padding needed
-	if (padding_needed > 0) {
+	if (!nop && padding_needed > 0) {
 		//pad
 		payload_size = orig_size;
 		padding_insert(skb, padding_needed);
 	}
 	//else if fragmentation needed
-	else if (padding_needed < 0) {
+	else if (!nop && padding_needed < 0) {
 		//fragment
 		payload_size = orig_size + padding_needed;
 		skb_remainder = tfc_fragment(skb, payload_size);
@@ -374,30 +392,57 @@ KIRALY: suggestion:
 void SA_Logic(struct xfrm_state *x)
 {
 	unsigned long	rand1;
-	int modulo = 100;
-	if (x->dummy_route!=NULL) dequeue(x,am_pktlen);
-	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
-	switch (x->algorithm){
-		case 0:	break;
-		
-		case 1:	get_random_bytes(&rand1,4);
-			sa_hz = 1 + rand1%modulo;
+	int modulo = 3;
+	unsigned long delay;
+	int pktlen;
+	
+	//switch (x->size_algorithm){
+	switch (size_algorithm){
+		case 0:	//NOP
+			pktlen = -1;
 			break;
-		case 2: sa_hz = 1 + (a%modulo);
+
+		case 1:	//CBR
+			pktlen = am_pktlen;
+			break;
+
+		case 2:	//random size 
+			//between ...
+			get_random_bytes(&rand1,4);
+			pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen) ;
+			break;
+	}
+
+	if (x->dummy_route!=NULL) dequeue(x,pktlen);
+	
+	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
+	//switch (x->delay_algorithm){
+	switch (delay_algorithm){
+		case 0:	//NOP
+			delay = 0;
+			break;
+
+		case 1:	//CBR
+			delay = HZ / sa_hz;
+			break;
+
+		case 2:	//random IPD (inter-packet-delay)
+			//uniform in [0 ... 1/sa_hz sec]
+			get_random_bytes(&rand1,4);
+			delay = HZ / sa_hz / (rand1%modulo);
+			break;
+
+		case 3: //???
+			delay = HZ / (1 + (a%modulo));
 			a++;
 			if(a>=modulo) a = 0;
 			break;
-		case 3: 
-			break;
-		case 4: 
-			break;
-		case 5: 
-			break;
 	}
+	
 	printk(KERN_INFO "MAR SA_Logic:%u\n", sa_hz);
 	//init_timer(&x->tfc_alg_timer);
 	del_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.expires +=  HZ/sa_hz;
+	x->tfc_alg_timer.expires +=  delay;
 	add_timer(&x->tfc_alg_timer);
 }
 
@@ -436,7 +481,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 		return;
 	};
 	dst_hold(&x->dummy_route->u.dst);
-	x->algorithm=algorithm;
+	//x->algorithm=algorithm;
 	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
 	/*switch (x->algorithm){
 		//CBR
@@ -519,7 +564,7 @@ void SAD_check(void)
 	}
 	
 	//ogni 15 secondi controllo nuovamente il SAD
-	init_timer(&SAD_timer);
+	del_timer(&SAD_timer);
 	SAD_timer.expires = jiffies + HZ*15;
 	add_timer(&SAD_timer);
 }
@@ -543,18 +588,19 @@ static int __init init(void)
 
 printk(KERN_INFO "FAB myhook init\n");
 /* Fill in our hook structure */
-    nfho.hook = tfc_hook;         /* Handler function */
-    nfho.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
-    nfho.pf       = PF_INET;
-    nfho.priority = NF_IP_PRI_FIRST;   /* Make our function first */
+        nfho.hook = tfc_hook;         /* Handler function */
+        nfho.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
+        nfho.pf       = PF_INET;
+        nfho.priority = NF_IP_PRI_FIRST;   /* Make our function first */
 
-    nf_register_hook(&nfho);
+        nf_register_hook(&nfho);
 	
 	// start timer to periodically look for new Security Associations
 	init_timer(&SAD_timer);
 	SAD_timer.function = SAD_check;
-	SAD_timer.expires = jiffies + HZ*15;
-	add_timer(&SAD_timer);
+	//SAD_timer.expires = jiffies + HZ*15;
+	//add_timer(&SAD_timer);
+	SAD_check();
 	return 0;
 }
 

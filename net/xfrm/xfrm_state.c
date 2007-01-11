@@ -222,9 +222,10 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 
 static int __xfrm_state_delete(struct xfrm_state *x)
 {
+	int err;
+	
 	//cskiraly: first chech whether the structures were initialized!
-/*
-	if (&x->dummy_route) { 
+	if (x->dummy_route) { 
 		//Marco
 		//printk(KERN_INFO "MAR _xfrm_state_delete\n");
 		del_timer(&x->tfc_alg_timer);
@@ -243,8 +244,8 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 			printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
 		}
 	}
-*/
-	int err = -ESRCH;
+
+	err = -ESRCH;
 
 	if (x->km.state != XFRM_STATE_DEAD) {
 		x->km.state = XFRM_STATE_DEAD;
@@ -1116,6 +1117,10 @@ int xfrm_init_state(struct xfrm_state *x)
 	struct xfrm_state_afinfo *afinfo;
 	int family = x->props.family;
 	int err;
+
+	//cskiraly
+	x->dummy_route=NULL;
+	//-cskiraly
 
 	err = -EAFNOSUPPORT;
 	afinfo = xfrm_state_get_afinfo(family);

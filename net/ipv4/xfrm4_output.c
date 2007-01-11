@@ -19,7 +19,8 @@
 
 //fabrizio
 #define TFC_APPLY 1
-#include <net/myhook_files.h>
+#include <net/my_tfc.h>
+//#include <net/myhook_files.h>
 
 /* Add encapsulation header.
  *
@@ -66,8 +67,8 @@ static void xfrm4_encap(struct sk_buff *skb)
 		skb->h.raw += iph->ihl*4;
 		memmove(top_iph, iph, iph->ihl*4);
 	
-		printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",\
-			skb->nh.iph->protocol, skb->nh.iph);
+		//printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",\
+		//	skb->nh.iph->protocol, skb->nh.iph);
 
 		return;
 	}
@@ -94,7 +95,7 @@ static void xfrm4_encap(struct sk_buff *skb)
 	
 	//fabrizio
 //ESP->AH	if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
-	if((x->id.proto == IPPROTO_AH) && TFC_APPLY)
+	if((x->id.proto == TFC_ATTACH_PROTO) && TFC_APPLY)
 		top_iph->protocol = IPPROTO_TFC;
 	else	
 		top_iph->protocol = IPPROTO_IPIP;
@@ -129,11 +130,13 @@ out:
 }
 
 static int xfrm4_output_one(struct sk_buff *skb)
-{	//fabrizio
-	printk(KERN_INFO "FAB xfrm4_output_one\n");
+{
 	struct dst_entry *dst = skb->dst;
 	struct xfrm_state *x = dst->xfrm;
 	int err;
+	int counter;
+
+	//fabrizio
 	printk(KERN_INFO "FAB xfrm4_output_one - header_len:%d, LL:%d,headroom:%d\
 		 \n",x->props.header_len,LL_RESERVED_SPACE(skb->dst->dev),skb_headroom(skb) );
 	
@@ -148,7 +151,8 @@ static int xfrm4_output_one(struct sk_buff *skb)
 		if (err)
 			goto error_nolock;
 	}
-	int counter = 1;
+
+	counter = 1;
 	do {
 		spin_lock_bh(&x->lock);
 		err = xfrm_state_check(x, skb);
@@ -190,10 +194,12 @@ error_nolock:
 }
 
 static int xfrm4_output_finish(struct sk_buff *skb)
-{	//fabrizio
+{
+ 	int err;
+	int counter;
+
+	//fabrizio
 	printk(KERN_INFO "FAB xfrm4_output_finish\n");
- 
-	int err;
 
 #ifdef CONFIG_NETFILTER
 	if (!skb->dst->xfrm) {
@@ -204,7 +210,8 @@ static int xfrm4_output_finish(struct sk_buff *skb)
 		return dst_output(skb);
 	}
 #endif  
-	int counter = 1;
+
+	counter = 1;
 	while (likely((err = xfrm4_output_one(skb)) == 0)) {
 		nf_reset(skb);
 		//fabrizio
