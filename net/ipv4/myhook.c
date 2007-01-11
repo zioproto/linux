@@ -152,6 +152,24 @@ static void build_dummy_pkt(struct xfrm_state *x){
 }
 
 
+// TODO: fill padding
+void padding_insert(struct sk_buff *skb, int padsize)
+{
+	unsigned char * padding_p;
+	
+	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
+	pskb_expand_head(skb,0,padsize,GFP_ATOMIC);
+	printk(KERN_INFO "MAR Tailroom: %d,\n",skb_tailroom (skb));
+	padding_p = skb_put(skb, padsize);	
+	printk(KERN_INFO "MAR padding_insert - padlen: %d,\n", padsize);
+	
+	//fill padding with 0
+	memset(padding_p, 0, padsize);
+
+	return;	
+}
+
+
 /**
 Insert TFC header and pre-padding to a pkt
 To avoid kernel panic we expand the skb area of the required amount of space
@@ -179,15 +197,15 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 			memmove(top_iph, iph, iph->ihl*4);
 
 			//tfch should be directly before the trahsport header (h)
-			tfch = skb->h.raw - sizeof(struct ip_tfc_hdr);	/*tfch è situato tra esp hdr e l'header del
+			tfch = (void*) skb->h.raw - sizeof(struct ip_tfc_hdr);	/*tfch è situato tra esp hdr e l'header del
  								transport layer*/
 		} else {  
 			//In Tunnel mode
-			tfch = skb->nh.raw;
+			tfch = (void*) skb->nh.raw;
 		}
 	} else { // footer
 		pskb_expand_head(skb,0,sizeof(struct ip_tfc_hdr),GFP_ATOMIC);
-		tfch = skb_put(skb,sizeof(struct ip_tfc_hdr));
+		tfch = (void*) skb_put(skb,sizeof(struct ip_tfc_hdr));
 	}
 
 	//link in TFC in the protocol "stack"
@@ -200,7 +218,7 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 			printk(KERN_INFO "MAR tfch->nexthdr: %hhd, iph->protocol:%hhd\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} else {  
 			//In Tunnel mode
-			tfch = skb->nh.raw;
+			tfch = (void*) skb->nh.raw;
 			tfch->nexthdr = IPPROTO_IPIP; //nexthd=protocol IPoverIP
 		}
 	}
@@ -303,7 +321,7 @@ void dequeue(struct xfrm_state *x, int pkt_size)
 		//TODO: not working for tunnel at the moment
 		if (x->props.mode) return;
 		skb = skb_dequeue(&x->dummy_list);
-		printk(KERN_INFO "MAR send_dummy_pkt -refcnt:%d\n", skb->dst->__refcnt);
+		//printk(KERN_INFO "MAR send_dummy_pkt -refcnt:%d\n", skb->dst->__refcnt);
 		build_dummy_pkt(x);
 	} else {
 		//dummy packets are desabled
@@ -398,26 +416,27 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	*/
 	unsigned long	rand1;
 	int modulo = 100;
-	printk(KERN_INFO "FAB dummy_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
 	//fabrizio - creo la rtable per questa SA..mi serve per poter instradare i pacchetti dummy
-		struct flowi fl = { .oif = 0,
-				    .nl_u = { .ip4_u =
-					      { .daddr = x->id.daddr.a4,
-						.saddr = x->props.saddr.a4,
-						.tos = 0} },
-				    .proto = IPPROTO_TFC,
-		};
-		int err;
+	struct flowi fl = { .oif = 0,
+			    .nl_u = { .ip4_u =
+				      { .daddr = x->id.daddr.a4,
+					.saddr = x->props.saddr.a4,
+					.tos = 0} },
+			    .proto = IPPROTO_TFC,
+	};
+	int err;
 
-		err = ip_route_output_key(&x->dummy_route, &fl);
-		if (err) {
-			printk(KERN_INFO "FAB dummy_init - ip_route_output_key\
-				 fallito!\n");
-			//cskiraly: set this to null to signal that other structures doesn't have to be destroyed at the end 
-			x->dummy_route = NULL;
-			return;
-		};
-		dst_hold(&x->dummy_route->u.dst);
+	printk(KERN_INFO "FAB dummy_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
+
+	err = ip_route_output_key(&x->dummy_route, &fl);
+	if (err) {
+		printk(KERN_INFO "FAB dummy_init - ip_route_output_key\
+			 fallito!\n");
+		//cskiraly: set this to null to signal that other structures doesn't have to be destroyed at the end 
+		x->dummy_route = NULL;
+		return;
+	};
+	dst_hold(&x->dummy_route->u.dst);
 	x->algorithm=algorithm;
 	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
 	switch (x->algorithm){
@@ -464,11 +483,12 @@ inizializzare le funzioni di TFC per ogni nuova SA ESP eventualmente inserita
 */
 void SAD_check(void)
 {
-	printk(KERN_INFO "FAB SAD_check\n");
 	struct list_head *state_list;
 	struct xfrm_state_afinfo *afinfo;
 	int i;
 	struct xfrm_state *x;
+
+	printk(KERN_INFO "FAB SAD_check\n");
 	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
 	xfrm_state_get_afinfo*/
 	afinfo = xfrm_state_get_afinfo(AF_INET);

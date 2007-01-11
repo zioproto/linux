@@ -52,11 +52,3 @@
 #include <net/checksum.h>
 
 #define TFC_ATTACH_PROTO IPPROTO_AH
-
-//void tfch_insert(struct sk_buff *skb, int padsize);
-//struct sk_buff* tfc_fragment(struct sk_buff *skb, int size);
-//void tfc_SA_remove(struct xfrm_state *x);
-//void send_pkt(unsigned long data);
-
-
-//extern struct timer_list	TFC_control;
