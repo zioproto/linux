@@ -227,7 +227,7 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	skb->h.raw = skb->data;
 
 	//cskiraly: TFC removal
-        //if (iph->protocol == IPPROTO_TFC)
+        if (skb->nh.iph->protocol == IPPROTO_TFC)
 		tfc_remove(skb);
 
 	return 0;
