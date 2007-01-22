@@ -21,7 +21,7 @@ static struct xfrm_type_map xfrm4_type_map = { .lock = RW_LOCK_UNLOCKED };
 
 static int xfrm4_dst_lookup(struct xfrm_dst **dst, struct flowi *fl)
 {
-	printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_lookup\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_lookup\n");
 	return __ip_route_output_key((struct rtable**)dst, fl);
 }
 
@@ -29,7 +29,7 @@ static struct dst_entry *
 __xfrm4_find_bundle(struct flowi *fl, struct xfrm_policy *policy)
 {
 	struct dst_entry *dst;
-	printk(KERN_INFO "MAR xfrm4_policy: __xfrm4_find_bundle\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: __xfrm4_find_bundle\n");
 	read_lock_bh(&policy->lock);
 	for (dst = policy->bundles; dst; dst = dst->next) {
 		struct xfrm_dst *xdst = (struct xfrm_dst*)dst;
@@ -72,7 +72,7 @@ __xfrm4_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 	int err;
 	int header_len = 0;
 	int trailer_len = 0;
-	printk(KERN_INFO "MAR xfrm4_policy: __xfrm4_bundle_create\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: __xfrm4_bundle_create\n");
 	dst = dst_prev = NULL;
 	dst_hold(&rt->u.dst);
 
@@ -177,7 +177,7 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl)
 {
 	struct iphdr *iph = skb->nh.iph;
 	u8 *xprth = skb->nh.raw + iph->ihl*4;
-	printk(KERN_INFO "MAR xfrm4_policy: _decode_session4\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: _decode_session4\n");
 	memset(fl, 0, sizeof(struct flowi));
 	if (!(iph->frag_off & htons(IP_MF | IP_OFFSET))) {
 		switch (iph->protocol) {
@@ -238,7 +238,7 @@ _decode_session4(struct sk_buff *skb, struct flowi *fl)
 
 static inline int xfrm4_garbage_collect(void)
 {
-	printk(KERN_INFO "MAR xfrm4_policy: xfrm4_garbage_collect\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: xfrm4_garbage_collect\n");
 	read_lock(&xfrm4_policy_afinfo.lock);
 	xfrm4_policy_afinfo.garbage_collect();
 	read_unlock(&xfrm4_policy_afinfo.lock);
@@ -249,14 +249,14 @@ static void xfrm4_update_pmtu(struct dst_entry *dst, u32 mtu)
 {
 	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
 	struct dst_entry *path = xdst->route;
-	printk(KERN_INFO "MAR xfrm4_policy: xfrm4_update_pmtu\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: xfrm4_update_pmtu\n");
 	path->ops->update_pmtu(path, mtu);
 }
 
 static void xfrm4_dst_destroy(struct dst_entry *dst)
 {
 	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
-	printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_destroy\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_destroy\n");
 	if (likely(xdst->u.rt.idev))
 		in_dev_put(xdst->u.rt.idev);
 	xfrm_dst_destroy(xdst);
@@ -266,7 +266,7 @@ static void xfrm4_dst_ifdown(struct dst_entry *dst, struct net_device *dev,
 			     int unregister)
 {
 	struct xfrm_dst *xdst;
-	printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_ifdown\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: xfrm4_dst_ifdown\n");
 	if (!unregister)
 		return;
 
@@ -312,19 +312,19 @@ static struct xfrm_policy_afinfo xfrm4_policy_afinfo = {
 
 static void __init xfrm4_policy_init(void)
 {
-	printk(KERN_INFO "MAR xfrm4_policy: __init xfrm4_policy_init\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: __init xfrm4_policy_init\n");
 	xfrm_policy_register_afinfo(&xfrm4_policy_afinfo);
 }
 
 static void __exit xfrm4_policy_fini(void)
 {
-	printk(KERN_INFO "MAR xfrm4_policy: __exit xfrm4_policy_fini\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: __exit xfrm4_policy_fini\n");
 	xfrm_policy_unregister_afinfo(&xfrm4_policy_afinfo);
 }
 
 void __init xfrm4_init(void)
 {
-	printk(KERN_INFO "MAR xfrm4_policy: __init xfrm4_init\n");
+	//printk(KERN_INFO "MAR xfrm4_policy: __init xfrm4_init\n");
 	xfrm4_state_init();
 	xfrm4_policy_init();
 }

@@ -229,7 +229,7 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 		//Marco
 		//printk(KERN_INFO "MAR _xfrm_state_delete\n");
 		del_timer(&x->tfc_alg_timer);
-
+/*
 		//Svuoto la coda dei pacchetti
 		printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));
 		while (!skb_queue_empty(&x->tfc_list)){
@@ -243,6 +243,7 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 			skb_dequeue(&x->dummy_list);
 			printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
 		}
+*/
 	}
 
 	err = -ESRCH;
@@ -467,7 +468,7 @@ static void __xfrm_state_insert(struct xfrm_state *x)
 
 void xfrm_state_insert(struct xfrm_state *x)
 {	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_insert\n");
+	//printk(KERN_INFO "FAB xfrm_state_insert\n");
 	
 	spin_lock_bh(&xfrm_state_lock);
 	__xfrm_state_insert(x);
@@ -487,7 +488,7 @@ int xfrm_state_add(struct xfrm_state *x)
 	int err;
 
 	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_add\n");
+	//printk(KERN_INFO "FAB xfrm_state_add\n");
 
 	family = x->props.family;
 	afinfo = xfrm_state_get_afinfo(family);
@@ -543,7 +544,7 @@ int xfrm_state_update(struct xfrm_state *x)
 	int err;
 
 	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_update\n");
+	//printk(KERN_INFO "FAB xfrm_state_update\n");
 
 	afinfo = xfrm_state_get_afinfo(x->props.family);
 	if (unlikely(afinfo == NULL))

@@ -127,7 +127,7 @@ void tfc_remove(struct sk_buff *skb)
 	struct iphdr *iph;
 	iph = skb->nh.iph;
 	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
-	printk(KERN_INFO "RICEVUTO PACCHETTO TFC - skblen:%2d, skb->nh.raw:%d, skb->nh.iph:%d, tfch:%d\n",\
+/*	printk(KERN_INFO "RICEVUTO PACCHETTO TFC - skblen:%2d, skb->nh.raw:%d, skb->nh.iph:%d, tfch:%d\n",\
 		skb->len, (unsigned char*)skb->nh.raw - skb->data, (unsigned char*)skb->nh.iph - skb->data, (unsigned char*)tfch - skb->data);
         while(i < 50){
 		printk(KERN_INFO "%x ",*(skb->nh.raw + i));
@@ -135,7 +135,7 @@ void tfc_remove(struct sk_buff *skb)
 		if (!(i%8)) printk(KERN_INFO "\n");
         }
 	printk(KERN_INFO "\n");
-
+*/
 
 	//change protocol from TFC to the next one in iph	
 	skb->nh.iph->protocol = tfch->nexthdr;
