@@ -411,6 +411,20 @@ config MYHOOK
 	help
 		say YES :-)
 	  
+config MYHOOK_IN
+	select NETFILTER
+	tristate "TFC MYHOOK INPUT"
+	help
+		say YES :-)
+	
+config INET_TFC
+	tristate "IP: TFC trasformation"
+	---help---
+	  Support for IPsec TFC (Traffic FLow Confidnciality).
+
+	  If unsure, say m.
+	
+
 config INET_TUNNEL
 	tristate "IP: tunnel transformation"
 	select XFRM

@@ -128,4 +128,10 @@ struct ip_tfc_hdr {
 	__u16 payloadsize;
 };
 
+struct ip_frag_hdr {
+	__u8 nexthdr;
+	__u8 identif;
+	__u16 offset;
+};
+
 #endif	/* _LINUX_IP_H */

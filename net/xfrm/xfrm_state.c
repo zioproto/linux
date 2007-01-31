@@ -222,14 +222,15 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 
 static int __xfrm_state_delete(struct xfrm_state *x)
 {
-	int err;
-	
+	del_timer(&x->tfc_alg_timer);
+	printk(KERN_INFO "MAR xfrm_state_delete: delete tfc_alg_timer\n");
 	//cskiraly: first chech whether the structures were initialized!
-	if (x->dummy_route) { 
+
+	if (x->dummy_route != NULL) { 
 		//Marco
 		//printk(KERN_INFO "MAR _xfrm_state_delete\n");
-		del_timer(&x->tfc_alg_timer);
-/*
+		//del_timer(&x->tfc_alg_timer);
+
 		//Svuoto la coda dei pacchetti
 		printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));
 		while (!skb_queue_empty(&x->tfc_list)){
@@ -243,10 +244,8 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 			skb_dequeue(&x->dummy_list);
 			printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
 		}
-*/
 	}
-
-	err = -ESRCH;
+	int err = -ESRCH;
 
 	if (x->km.state != XFRM_STATE_DEAD) {
 		x->km.state = XFRM_STATE_DEAD;
@@ -468,7 +467,7 @@ static void __xfrm_state_insert(struct xfrm_state *x)
 
 void xfrm_state_insert(struct xfrm_state *x)
 {	//fabrizio
-	//printk(KERN_INFO "FAB xfrm_state_insert\n");
+	printk(KERN_INFO "FAB xfrm_state_insert\n");
 	
 	spin_lock_bh(&xfrm_state_lock);
 	__xfrm_state_insert(x);
@@ -482,13 +481,13 @@ static struct xfrm_state *__xfrm_find_acq_byseq(u32 seq);
 
 int xfrm_state_add(struct xfrm_state *x)
 {	
+	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_add\n");
+
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int family;
 	int err;
-
-	//fabrizio
-	//printk(KERN_INFO "FAB xfrm_state_add\n");
 
 	family = x->props.family;
 	afinfo = xfrm_state_get_afinfo(family);
@@ -538,13 +537,12 @@ out:
 EXPORT_SYMBOL(xfrm_state_add);
 
 int xfrm_state_update(struct xfrm_state *x)
-{
+{	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_update\n");
+
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int err;
-
-	//fabrizio
-	//printk(KERN_INFO "FAB xfrm_state_update\n");
 
 	afinfo = xfrm_state_get_afinfo(x->props.family);
 	if (unlikely(afinfo == NULL))
@@ -1118,10 +1116,6 @@ int xfrm_init_state(struct xfrm_state *x)
 	struct xfrm_state_afinfo *afinfo;
 	int family = x->props.family;
 	int err;
-
-	//cskiraly
-	x->dummy_route=NULL;
-	//-cskiraly
 
 	err = -EAFNOSUPPORT;
 	afinfo = xfrm_state_get_afinfo(family);

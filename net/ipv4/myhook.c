@@ -40,6 +40,7 @@ static int am_pktlen = 1300;
 static int min_pktlen = 1000;
 static int max_pktlen = 2000;
 static int rnd_pad = 200;
+int ident_frag = 0;
 
 int a = 0;
 char dummy_sent; //bool signaling that a dummy was sent, dummy queue should be refilled
@@ -247,6 +248,8 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 			//link in TFC in the protocol "stack"
 			tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
 			skb->nh.iph->protocol = IPPROTO_TFC;
+			if (am_pktlen > 1456)
+			skb->nh.iph->frag_off = 0x0000;
 			//printk(KERN_INFO "MAR tfch->nexthdr: %hhd, iph->protocol:%hhd\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} else {  
 			//In Tunnel mode
@@ -268,50 +271,89 @@ TFC fragmentation
 //TODO
 struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 {
+	int fragh_state = 0;
+	int headerlen;
 	struct sk_buff *skb_new;
-	//printk(KERN_INFO "MAR tfc_fragment called\n");
-	//struct ip_tfc_hdr *tfch, *tfch_new;
-	//struct iphdr *iph;
-	//struct dst_entry *dst = skb->dst;
-	//struct xfrm_state *x = dst->xfrm;
-	//void *tmp;
-	//int new_data_len;
-	//iph = skb->nh.iph;
-	//u8 workbuf[60];
-	skb_new = skb_clone (skb, GFP_ATOMIC);
-	//printk(KERN_INFO "MAR tfc_fragment - skb clonato\n");
-/*
-	skb_queue_tail(&x->tfc_list,skb_new);
-	printk(KERN_INFO "MAR tfc_fragment - skb_new enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
-	return;*/
+	struct iphdr *iph;
+	struct ip_frag_hdr *fragh, *fragh_new;
+	printk(KERN_INFO "MAR tfc_fragment called\n");
+	iph = skb->nh.iph;
+	if(skb->nh.iph->protocol != NEXTHDR_FRAGMENT){
+		//Inserisco l'header di frammentazione
+		fragh_state = 1;
+ 		//iph = skb->nh.iph;
+		printk(KERN_INFO "EMA skb->len before expand and put: %d \n", skb->len);
+		pskb_expand_head(skb,0,sizeof(struct ip_frag_hdr),GFP_ATOMIC);
+		skb_put(skb,sizeof(struct ip_frag_hdr));
+		printk(KERN_INFO "EMA skb->len after expand and put: %d \n", skb->len);
+		memmove(skb->data + iph->ihl*4 + sizeof(struct ip_frag_hdr), skb->data + iph->ihl*4, skb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr));
+		fragh = (void*) (skb->data + iph->ihl*4);
+		fragh->nexthdr = skb->nh.iph->protocol;
+		skb->nh.iph->protocol = NEXTHDR_FRAGMENT;
+	}
+	printk(KERN_INFO "EMA size frag_header: %d \n", sizeof(struct ip_frag_hdr));
 	
-	//trim original to "size"
-	//skb_trim(skb, skb->len - size);
-	skb_trim(skb, size);
-	//printk(KERN_INFO "EMA skb trimmato\n");
-	//remove the first fragment of "size" from the remainder
-	//skb_pull(skb_new, size);
+	fragh = (void*) (skb->data + iph->ihl*4);
+	headerlen = skb->data - skb->head;
+	skb_new = alloc_skb(skb->end - skb->head + skb->data_len, GFP_ATOMIC);
+	skb_reserve(skb_new, headerlen);
+	skb_new->nh.raw = (void*) skb_new->data;
+	skb_put(skb_new, skb->len - size);
 	
-	memmove(skb_new->data+20, skb_new->data+size, skb->len - size);
-	//printk(KERN_INFO "EMA skb_new traslato\n");
+	//Clono skb
+	memcpy(skb_new->data, skb->data, (iph->ihl*4 + sizeof(struct ip_frag_hdr)));
+	memmove(skb_new->data + iph->ihl*4 + sizeof(struct ip_frag_hdr), skb->data + iph->ihl*4 + sizeof(struct ip_frag_hdr) + size, skb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr) - size);
+	skb_new->dst = skb->dst;
+	dst_hold(skb_new->dst);
+	printk(KERN_INFO "EMA skb->len : %d \n", skb->len);
+	
+	
+	fragh_new = (void*) (skb_new->data + iph->ihl*4);
+	
+	
+	
+	printk(KERN_INFO "EMA len_packet to queue : %d\n",skb_new->len );
+	skb_trim(skb_new, skb->len - size);
+	printk(KERN_INFO "EMA len_packet to queue : %d\n",skb_new->len );
+	//Ridimensiono skb
+	skb_trim(skb, size + iph->ihl*4 + sizeof(struct ip_frag_hdr));
+	printk(KERN_INFO "EMA skb trimmed\n");
+	printk(KERN_INFO "EMA len_packet to sent : %d\n",skb->len );
+	
+	//Riempio i campi header di frammentazione di skb e skb_new
+	if (fragh_state == 1){  //Se il pacchetto non è stato ancora frammentato
+		if (ident_frag == 255) ident_frag = 1;
+		else ident_frag++;
 
-	skb_trim(skb_new, skb->len - size + 20);
-	//printk(KERN_INFO "EMA skb_new trimmato\n");
-	//tmp = skb_new->data + size;
-	//new_data_len = skb_new->len - size; 
-	//memcpy(workbuf, skb_new->data, new_data_len);
+		fragh->identif = ident_frag; //Riempio campo Identif di skb
+		printk(KERN_INFO "EMA frag.identif = %d\n", fragh->identif);
+		fragh_new->identif = ident_frag; //Riempio campo Identif di skb_new
+		printk(KERN_INFO "EMA frag_new.identif = %d\n", fragh_new->identif);
+
+
+		
+		fragh->offset = 0x8000; //Riempio campo M e Offset di skb
+		printk(KERN_INFO "EMA frag.offset = %x\n", fragh->offset);
+		
+
+		
+		
+		fragh_new->offset = (size & 0x7fff);	//Riempio campo M e Offset di skb_new
+		printk(KERN_INFO "EMA frag_new.offset = %x\n", fragh_new->offset);
+		
+		printk(KERN_INFO "EMA Riempiti i campi del fragmentation header\n");
+	} 
+	else {                //Se il pacchetto è già stato frammentato
+		fragh->offset |= 0x8000; //Riempio campo M e Offset di skb
+		printk(KERN_INFO "EMA frag.offset = %x\n", fragh->offset);
+		printk(KERN_INFO "EMA size = %d\n", size);
+		fragh_new->offset += size; //Riempio campo M e Offset di skb_new
+		fragh_new->offset &= (0x7fff);
+		printk(KERN_INFO "EMA frag.offset = %x\n", fragh_new->offset);
+		printk(KERN_INFO "EMA Riempiti i campi del fragmentation header\n");
+	} 
 	
-	//skb_trim(skb_new,new_data_len);
-	//memcpy(skb->h.raw, workbuf, new_data_len);
-	//skb_trim(skb,50);	
-	//tfch = skb->nh.raw + (iph->ihl*4);
-	//tfch_new = skb_new->nh.raw + (iph->ihl*4);
-	//tfch->frag = 2;
-	//tfch->numfrag = 2;
-	//tfch_new->frag = 1;
-	//tfch_new->numfrag = 2;
-	//skb_queue_tail(&x->tfc_list,skb_new);
-	//printk(KERN_INFO "MAR tfc_fragment end\n");
+	printk(KERN_INFO "MAR tfc_fragment end\n");
 	return skb_new;
 }
 
@@ -381,8 +423,9 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 	//else if fragmentation needed
 	else if (fragmentation && padding_needed < 0) {
 		//fragment
-		payload_size = orig_size + padding_needed;
+		payload_size = orig_size + padding_needed - sizeof(struct ip_frag_hdr);
 		skb_remainder = tfc_fragment(skb, payload_size);
+		payload_size += sizeof(struct ip_frag_hdr);
 		//push back remaining part
 		//TODO: handle the case of dummy!
 		skb_queue_head(&x->tfc_list,skb_remainder);
@@ -480,7 +523,7 @@ void SA_Logic(struct xfrm_state *x)
 		case 2:	//random IPD (inter-packet-delay)
 			//grometric in [0 ... 1/sa_hz sec]
 			get_random_bytes(&rand1,4);
-			delay = HZ / sa_hz / (rand1%modulo);
+			delay = HZ / (1 + (rand1%modulo));
 			break;
 
 		case 3: //???
