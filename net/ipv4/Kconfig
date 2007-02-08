@@ -417,10 +417,10 @@ config MYHOOK_IN
 	help
 		say YES :-)
 	
-config INET_TFC
-	tristate "IP: TFC trasformation"
+config TFCTCP
+	tristate "IP: TFC TCP test"
 	---help---
-	  Support for IPsec TFC (Traffic FLow Confidnciality).
+	  TFC TCP test.
 
 	  If unsure, say m.
 	

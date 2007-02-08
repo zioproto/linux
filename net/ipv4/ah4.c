@@ -127,7 +127,7 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	struct ip_auth_hdr *ah;
 	struct ah_data *ahp;
 	char work_buf[60];
-	printk(KERN_INFO "MAR ah4_input called \n");
+	//printk(KERN_INFO "MAR ah4_input called \n");
 	if (!pskb_may_pull(skb, sizeof(struct ip_auth_hdr)))
 		goto out;
 
