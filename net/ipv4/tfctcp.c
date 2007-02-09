@@ -111,28 +111,35 @@ KIRALY: why would you do it before queuing?
 //void tfch_insert(struct sk_buff *skb, int padsize, bool header, bool prot_id)
 void tfch_insert(struct sk_buff *skb, int payloadsize)
 {	
-	struct iphdr *iph, *top_iph;
+	struct iphdr *old_iph;
+	// *top_iph;
 	struct ip_tfc_hdr *tfch;
 	struct dst_entry *dst = skb->dst;
 	struct xfrm_state *x = dst->xfrm;
+	int ihl;
 	
-	iph = skb->nh.iph;
-	skb->h.ipiph = iph;
+	printk(KERN_INFO "tfch_insert: skb->len:%d headroom:%d, tailroom:%d\n", skb->len, skb_headroom(skb), skb_tailroom(skb));
+
+	ihl = skb->nh.iph->ihl*4;
+	old_iph = skb->nh.iph;
+	//skb->h.ipiph = iph;
 	if (header) {
-		pskb_expand_head(skb,sizeof(struct ip_tfc_hdr),0,GFP_ATOMIC);
+		//pskb_expand_head(skb,sizeof(struct ip_tfc_hdr),0,GFP_ATOMIC);
+		//extend skb to make space for TFC, store new "nh"
 		skb->nh.raw = skb_push(skb,sizeof(struct ip_tfc_hdr));
-		top_iph = skb->nh.iph;
+		//top_iph = skb->nh.iph;
 	   
 		if (!x->props.mode){
 			//In Transport mode
-			skb->h.raw += iph->ihl*4;
-			memmove(top_iph, iph, iph->ihl*4);
+			//skb->h.raw += iph->ihl*4;
+			memmove(skb->nh.iph, old_iph, ihl);
 
 			//tfch should be directly before the trahsport header (h)
 			tfch = (void*) skb->h.raw - sizeof(struct ip_tfc_hdr);	/*tfch è situato tra esp hdr e l'header del
  								transport layer*/
 		} else {  
 			//In Tunnel mode
+			printk(KERN_INFO "tfch_insert:tunnel mode!\n");
 			tfch = (void*) skb->nh.raw;
 		}
 	} else { // footer
@@ -140,6 +147,8 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 		tfch = (void*) skb_put(skb,sizeof(struct ip_tfc_hdr));
 	}
 
+	//printk(KERN_INFO "tfch_insert: skb->len:%d tfc_payloadsize:%d, iph->tot_len:%d\n", skb->len, tfc_payloadsize, ntohs(skb->nh.iph->tot_len));
+	printk(KERN_INFO "tfch_insert: skb->len:%d data-nh:%d, data-h:%d\n", skb->len, skb->data-skb->nh.raw, skb->data-skb->h.raw);
 	//link in TFC in the protocol "stack"
 	if (prot_id) {
 		if (!x->props.mode){
@@ -147,11 +156,12 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 			//link in TFC in the protocol "stack"
 			tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
 			skb->nh.iph->protocol = IPPROTO_TFC;
-			if (am_pktlen > 1456)
-			skb->nh.iph->frag_off = 0x0000;
+			//if (am_pktlen > 1456)
+			//skb->nh.iph->frag_off = 0x0000;
 			//printk(KERN_INFO "MAR tfch->nexthdr: %hhd, iph->protocol:%hhd\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} else {  
 			//In Tunnel mode
+			printk(KERN_INFO "tfch_insert:tunnel mode!\n");
 			tfch = (void*) skb->nh.raw;
 			tfch->nexthdr = IPPROTO_IPIP; //nexthd=protocol IPoverIP
 		}
@@ -160,6 +170,9 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 	//tfch->padsize = htons(padsize);
 	tfch->payloadsize = (u_int16_t) payloadsize;
 	//skb_put(skb, tfch->padsize);		    //padding inserito dopo payload
+	
+	//set ip length field
+	skb->nh.iph->tot_len = htons(skb->len);
 
 	return;
 }
@@ -263,6 +276,10 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 	int payload_size; //payload_size inside TFC (the rest is padding)
 	//char nop; //packet size should not be changed
 
+	//data point to IP header
+	//nh point to IP header
+	//h points to e.g. TCP
+
 	//set packet size
 	//do the padding, fragmentation, place back ...
 	//to arrive to a packet of size pkt_size
@@ -276,6 +293,7 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 
 	//calculate the size of the payload: unfortunately the skb already contains the ip header (or the pseudo header?), so we need to subtract its length
 	orig_size = skb->len - skb->nh.iph->ihl*4;
+	//printk(KERN_INFO "packet_transform_len: skb->len:%d data-nh:%d, data-h:%d\n", skb->len, skb->data-skb->nh.raw, skb->data-skb->h.raw);
 	//the required padding (can be negative) is determined by the requested size, the payload_size and the tfc header size
 	padding_needed = pkt_size - orig_size - sizeof(struct ip_tfc_hdr);
 	//printk(KERN_INFO "KCS dequeue skb->len:%d orig_size:%d padding_needed:%d\n", skb->len, orig_size, padding_needed);
@@ -283,7 +301,7 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 	if (padding && padding_needed > 0) {
 		//pad
 		payload_size = orig_size;
-		padding_insert(skb, padding_needed);
+		//padding_insert(skb, padding_needed);
 	}
 	//else if fragmentation needed
 	else if (fragmentation && padding_needed < 0) {
@@ -313,7 +331,7 @@ void packet_transform_pad(struct xfrm_state *x, struct sk_buff *skb, int pad_siz
 
 	if (padding) {
 		//pad
-		padding_insert(skb, pad_size);
+		//padding_insert(skb, pad_size);
 	}
 
         if (padding || fragmentation || multiplexing) {
@@ -357,8 +375,6 @@ void packet_transform(struct xfrm_state *x, struct sk_buff *skb)
 	
 }
 
-
-
 /* This is the hook function itself.
    Check if there are related XFRMs. If no, return accept.
    Search for the first ESP in the XFRM stack. 
@@ -371,14 +387,15 @@ unsigned int tfc_hook(unsigned int hooknum,
 {
 	
 	/* IP address we want to drop packets from, in NB order */
-	struct sk_buff *sb = *skb;
-	struct dst_entry *dst = sb->dst;
+        //struct sk_buff **nskb,
+	//struct sk_buff *sb = *skb;
+	struct dst_entry *dst = (*skb)->dst;
 	struct xfrm_state *x;
-	struct iphdr *iph;
+	//struct iphdr *iph;
 	int i;
 	//printk(KERN_INFO "FAB myhook eseguito correttamente\n");
-	iph = (struct iphdr *)sb->data;
-	if (!sb->dst->xfrm) {
+	//iph = (struct iphdr *)sb->data;
+	if (!dst->xfrm) {
 		//printk(KERN_INFO "FAB myhook -	nessuna policy da applicare\n");
 		return NF_ACCEPT;	//ipsec non applicato a questo pacchetto
 	}
@@ -394,7 +411,12 @@ unsigned int tfc_hook(unsigned int hooknum,
 			//skb_queue_tail(&x->tfc_list,sb);
 			//printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
 			
-			packet_transform(x,sb);
+			//*skb  = skb_copy(*skb,GFP_ATOMIC);
+			//if ((skb_is_nonlinear(*skb) || skb_cloned(*skb)) && skb_linearize(*skb, GFP_ATOMIC) != 0) {
+			//	printk(KERN_INFO "TFC hook: error linearizing\n");
+			//}
+						
+			packet_transform(x,*skb);
 
 			return NF_ACCEPT;
 		}
@@ -406,11 +428,8 @@ unsigned int tfc_hook(unsigned int hooknum,
 	return NF_ACCEPT; //abbiamo cercato su tutta la catena di dst_entry senza trovare la SA cercata
 }
 
-
 static int __init init(void)
 {
-	
-
 //printk(KERN_INFO "FAB myhook init\n");
 /* Fill in our hook structure */
         nfho.hook = tfc_hook;         /* Handler function */
