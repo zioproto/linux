@@ -37,39 +37,40 @@ static int tot_len = 0;
 
 
 
-static struct sk_buff* tfc_input(struct sk_buff *skb)
+void tfc_input(struct sk_buff *skb)
 {
 	
 	
-	int tfc_payloadsize;
-	struct ip_frag_hdr *fragh;
+	//int tfc_payloadsize;
+	//struct ip_frag_hdr *fragh;
         struct ip_tfc_hdr *tfch;
 	struct iphdr *iph;
 
-	printk(KERN_INFO "MAR myhook_in - tfc_input \n");
+	//printk(KERN_INFO "MAR myhook_in - tfc_input \n");
 	iph = skb->nh.iph;
 	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
-	fragh = (struct ip_frag_hdr*)((skb->nh.raw + (iph->ihl*4) + sizeof(struct ip_tfc_hdr)));
-	printk(KERN_INFO "RICEVUTO PACCHETTO TFC \n");
+	//fragh = (struct ip_frag_hdr*)((skb->nh.raw + (iph->ihl*4) + sizeof(struct ip_tfc_hdr)));
+	//printk(KERN_INFO "RICEVUTO PACCHETTO TFC \n");
 
 	//change protocol from TFC to the next one in iph	
 	skb->nh.iph->protocol = tfch->nexthdr;
 	//cut padding
 	//pskb_trim(skb, iph->ihl*4 + sizeof(struct ip_tfc_hdr) + tfch->payloadsize);
 	//save ip header in temporary work buffer
-	tfc_payloadsize = tfch->payloadsize;
-	memmove(skb->h.raw, skb->h.raw + sizeof(struct ip_tfc_hdr), tfc_payloadsize);
-	skb_trim(skb, iph->ihl*4 + tfc_payloadsize);
+
+	//tfc_payloadsize = tfch->payloadsize;
+	//memmove(skb->h.raw, skb->h.raw + sizeof(struct ip_tfc_hdr), tfc_payloadsize);
+	//skb_trim(skb, iph->ihl*4 + tfc_payloadsize);
         
-	//skb->h.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
+	skb->h.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
 	//skb->nh.raw += sizeof(struct ip_tfc_hdr);
 	//memcpy(skb->nh.raw, workbuf, iph->ihl*4);
 	
-	skb->nh.iph->tot_len = htons(skb->len);
+	//skb->nh.iph->tot_len = htons(skb->len);
 
 	printk(KERN_INFO "MAR - tfcrimosso iph-protocol: %d \n", skb->nh.iph->protocol);
 
-	return skb;
+	//return skb;
 }
 
 /* This is the hook function itself.*/
@@ -80,17 +81,17 @@ unsigned int tfc_hook_in(unsigned int hooknum,
                        const struct net_device *out,
                        int (*okfn)(struct sk_buff *))
 {
-	struct sk_buff *sb = *skb;
-	struct iphdr *iph;
-	struct ip_tfc_hdr *tfch;
- 	struct ip_frag_hdr *fragh;
-	tfch = (void*) sb->h.raw;
-	iph = sb->nh.raw;
+	//struct sk_buff *sb = *skb;
+	//struct iphdr *iph;
+	//struct ip_tfc_hdr *tfch;
+ 	//struct ip_frag_hdr *fragh;
+	//tfch = (void*) sb->h.raw;
+	//iph = sb->nh.raw;
 
 
-	if (sb->nh.iph->protocol == IPPROTO_TFC){
-		sb = tfc_input(sb);
-		//dst_hold(sb->dst);
+	if ((*skb)->nh.iph->protocol == IPPROTO_TFC){
+		tfc_input(*skb);
+		//dst_hold((*skb)->dst);
 		return NF_ACCEPT;
 	}
 
