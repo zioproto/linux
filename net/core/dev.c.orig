@@ -115,7 +115,6 @@
 #include <net/iw_handler.h>
 #endif	/* CONFIG_NET_RADIO */
 #include <asm/current.h>
-#include <linux/ip.h>
 
 /*
  *	The list of packet types we will receive (as opposed to discard)
@@ -1245,7 +1244,6 @@ int dev_queue_xmit(struct sk_buff *skb)
 {
 	struct net_device *dev = skb->dev;
 	struct Qdisc *q;
-        static struct ip_auth_hdr *ahh;
 	int rc = -ENOMEM;
 
 	if (skb_shinfo(skb)->frag_list &&
@@ -1265,10 +1263,6 @@ int dev_queue_xmit(struct sk_buff *skb)
 	/* If packet is not checksummed and device does not support
 	 * checksumming for this protocol, complete checksumming here.
 	 */
-        ahh = (struct ip_auth_hdr *) skb->nh.iph + 20;
-        if (!((skb->nh.iph->protocol == 0x33)&&(ahh->nexthdr == 0xfd)))
-    	    dev->features = 0;
-	 
 	if (skb->ip_summed == CHECKSUM_HW &&
 	    (!(dev->features & (NETIF_F_HW_CSUM | NETIF_F_NO_CSUM)) &&
 	     (!(dev->features & NETIF_F_IP_CSUM) ||
