@@ -29,7 +29,7 @@ static int prot_id = 1;	//link in with protocol id or not
 
 static int dummy = 1;
 static int padding = 1;
-static int fragmentation = 0;
+static int fragmentation = 1;
 static int multiplexing = 0;
 
 static int delay_algorithm = 1;
@@ -278,7 +278,7 @@ struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 	struct ip_frag_hdr *fragh, *fragh_new;
 	printk(KERN_INFO "MAR tfc_fragment called\n");
 	iph = skb->nh.iph;
-	if(skb->nh.iph->protocol != NEXTHDR_FRAGMENT){
+	if(skb->nh.iph->protocol != NEXTHDR_FRAGMENT_TFC){
 		//Inserisco l'header di frammentazione
 		fragh_state = 1;
  		//iph = skb->nh.iph;
@@ -289,7 +289,7 @@ struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 		memmove(skb->data + iph->ihl*4 + sizeof(struct ip_frag_hdr), skb->data + iph->ihl*4, skb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr));
 		fragh = (void*) (skb->data + iph->ihl*4);
 		fragh->nexthdr = skb->nh.iph->protocol;
-		skb->nh.iph->protocol = NEXTHDR_FRAGMENT;
+		skb->nh.iph->protocol = NEXTHDR_FRAGMENT_TFC;
 	}
 	printk(KERN_INFO "EMA size frag_header: %d \n", sizeof(struct ip_frag_hdr));
 	

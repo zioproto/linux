@@ -121,7 +121,7 @@ static void tfc_defrag(struct sk_buff *skb)
 	printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
 	skb->h.raw = fragh;
 	ip_send_check(iph_new);
-	
+	skb->nh.iph->tot_len = skb->len;
 	//ip_send_check(iph_new);
 	return;
 	
@@ -151,8 +151,10 @@ unsigned int tfc_hook_in(unsigned int hooknum,
 
 
 	if (sb->nh.iph->protocol == IPPROTO_TFC){
+		printk(KERN_INFO "EMA protocol ip : %d \n", sb->nh.iph->protocol);
+		skb_trim(sb, iph->ihl*4 + tfch->payloadsize);
 		sb = tfc_input(sb);
-		if (sb->nh.iph->protocol == NEXTHDR_FRAGMENT){
+		if (sb->nh.iph->protocol == NEXTHDR_FRAGMENT_TFC){
 			printk(KERN_INFO "EMA fragment received \n");
 			fragh = (void*) sb->h.raw;
  			
