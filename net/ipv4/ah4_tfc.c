@@ -57,6 +57,42 @@ static int ip_clear_mutable_options(struct iphdr *iph, u32 *daddr)
 	return 0;
 }
 
+void tfch_insert(struct sk_buff *skb)
+{	
+	struct iphdr *old_iph;
+	struct ip_tfc_hdr *tfch;
+	int ihl;
+	
+	printk(KERN_INFO "tfch_insert: skb->len:%d headroom:%d, tailroom:%d\n", skb->len, skb_headroom(skb), skb_tailroom(skb));
+
+	ihl = skb->nh.iph->ihl*4;
+	old_iph = skb->nh.iph;
+
+	//extend skb to make space for TFC, store new "nh"
+	skb->nh.raw = skb_push(skb,sizeof(struct ip_tfc_hdr));
+	   
+	memmove(skb->nh.iph, old_iph, ihl);
+
+	tfch = (void*) skb->h.raw - sizeof(struct ip_tfc_hdr);
+
+	printk(KERN_INFO "tfch_insert: skb->len:%d data-nh:%d, data-h:%d\n", skb->len, skb->data-skb->nh.raw, skb->data-skb->h.raw);
+
+	//link in TFC in the protocol "stack"
+	tfch->nexthdr = skb->nh.iph->protocol;
+	skb->nh.iph->protocol = IPPROTO_TFC;
+
+	//set payload size
+	tfch->payloadsize = (u_int16_t) skb->len - ihl - sizeof(struct ip_tfc_hdr) -24;
+
+
+	//set ip length field
+	skb->nh.iph->tot_len = htons(skb->len);
+
+	ip_send_check(skb->nh.iph);
+
+	return;
+}
+
 static int ah_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -67,6 +103,9 @@ static int ah_output(struct xfrm_state *x, struct sk_buff *skb)
 		struct iphdr	iph;
 		char 		buf[60];
 	} tmp_iph;
+
+	//CSABA
+	tfch_insert(skb);
 
 	top_iph = skb->nh.iph;
 	iph = &tmp_iph.iph;
