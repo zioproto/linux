@@ -25,32 +25,45 @@
 #include <net/protocol.h>
 #include <asm/scatterlist.h>
 
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Delzeri Emanuele, Giuntini Marco");
 MODULE_DESCRIPTION("myhook_in function");
 
 static struct nf_hook_ops nfho;
 static struct sk_buff_head tfc_defrag_list;
-static int tfc_frag_len = 0;
-static int tot_len = 0;
-
-
+//static int tfc_frag_len = 0;
+//static int tot_len = 0;
 
 void tfc_input(struct sk_buff *skb)
 {
-	
-	
 	//int tfc_payloadsize;
 	//struct ip_frag_hdr *fragh;
         struct ip_tfc_hdr *tfch;
-	struct iphdr *iph;
+	//struct iphdr *iph;
+	int ihl;
+	int i;
 
-	//printk(KERN_INFO "MAR myhook_in - tfc_input \n");
-	iph = skb->nh.iph;
-	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
-	//fragh = (struct ip_frag_hdr*)((skb->nh.raw + (iph->ihl*4) + sizeof(struct ip_tfc_hdr)));
-	//printk(KERN_INFO "RICEVUTO PACCHETTO TFC \n");
+	//iph = skb->nh.iph;
+	ihl = skb->nh.iph->ihl*4;
+	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + ihl);
+
+	//printk(KERN_INFO "hook called: protocol:%d totlen:%d\n", skb->nh.iph->protocol, ntohs(skb->nh.iph->tot_len));
+	//printk(KERN_INFO "hook called: nh-data:%d h-data:%d len:%d\n ", skb->nh.raw-skb->data, skb->h.raw-skb->data, skb->len);
+	//for (i=0; i<40; i++){
+	//	printk(KERN_INFO "%x", *(skb->nh.raw+i));
+	//	if (skb->nh.raw+i == skb->h.raw || skb->nh.raw+i == skb->data) printk(KERN_INFO "\n"); 
+	//	if (skb->nh.raw+i == skb->tail) break; 
+	//}
+	//printk(KERN_INFO "\n");
+
+
+	//if ((skb_is_nonlinear(skb) || skb_cloned(skb)) &&
+	//    skb_linearize(skb, GFP_ATOMIC) != 0) {
+	//	printk(KERN_INFO "hook called: ERROR: cannot linearize!");
+	//}
+
+	//skb->ip_summed = CHECKSUM_NONE;
+
 
 	//change protocol from TFC to the next one in iph	
 	skb->nh.iph->protocol = tfch->nexthdr;
@@ -62,13 +75,21 @@ void tfc_input(struct sk_buff *skb)
 	//memmove(skb->h.raw, skb->h.raw + sizeof(struct ip_tfc_hdr), tfc_payloadsize);
 	//skb_trim(skb, iph->ihl*4 + tfc_payloadsize);
         
-	skb->h.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
-	//skb->nh.raw += sizeof(struct ip_tfc_hdr);
+	memmove(skb->nh.raw + sizeof(struct ip_tfc_hdr), skb->nh.raw, ihl);
+	skb->nh.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
+	skb->h.raw += sizeof(struct ip_tfc_hdr);
 	//memcpy(skb->nh.raw, workbuf, iph->ihl*4);
 	
-	//skb->nh.iph->tot_len = htons(skb->len);
+	skb->nh.iph->tot_len = htons(skb->len);
 
-	printk(KERN_INFO "MAR - tfcrimosso iph-protocol: %d \n", skb->nh.iph->protocol);
+	//printk(KERN_INFO "tfc removed: protocol:%d totlen:%d\n", skb->nh.iph->protocol, ntohs(skb->nh.iph->tot_len));
+	//printk(KERN_INFO "tfc removed: nh-data:%d h-data:%d len:%d\n ", skb->nh.raw-skb->data, skb->h.raw-skb->data, skb->len);
+	//for (i=0; i<40; i++){
+	//	printk(KERN_INFO "%x", *(skb->nh.raw+i));
+	//	if (skb->nh.raw+i == skb->h.raw || skb->nh.raw+i == skb->data) printk(KERN_INFO "\n"); 
+	//	if (skb->nh.raw+i == skb->tail) break; 
+	//}
+	//printk(KERN_INFO "\n");
 
 	//return skb;
 }
@@ -81,26 +102,11 @@ unsigned int tfc_hook_in(unsigned int hooknum,
                        const struct net_device *out,
                        int (*okfn)(struct sk_buff *))
 {
-	//struct sk_buff *sb = *skb;
-	//struct iphdr *iph;
-	//struct ip_tfc_hdr *tfch;
- 	//struct ip_frag_hdr *fragh;
-	//tfch = (void*) sb->h.raw;
-	//iph = sb->nh.raw;
-
-
 	if ((*skb)->nh.iph->protocol == IPPROTO_TFC){
 		tfc_input(*skb);
-		//dst_hold((*skb)->dst);
 		return NF_ACCEPT;
 	}
-
-	//dst_hold(sb->dst);
 	return NF_ACCEPT;
-	
-
-
-
 }
 
 static int __init init(void)
@@ -116,8 +122,6 @@ static int __init init(void)
 
 	skb_queue_head_init(&tfc_defrag_list);
 	return 0;
-
-
 }
 
 static void __exit fini(void)
