@@ -35,6 +35,8 @@ static int multiplexing = 0;
 static int delay_algorithm = 1;
 static int sa_hz = 1;
 
+static int batch_size = 1;
+
 static int size_algorithm = 1;
 static int am_pktlen = 1300;
 static int min_pktlen = 1000;
@@ -68,6 +70,10 @@ module_param(max_pktlen, int, 0644);
 MODULE_PARM_DESC(max_pktlen, "(default:2000), tfc packet size (without esp, ip, etc. header) ");
 module_param(rnd_pad, int, 0644);
 MODULE_PARM_DESC(rnd_pad, "(default:200)");
+
+//packet batching parameters
+module_param(batch_size, int , 0644);
+MODULE_PARM_DESC(batch_size, "(default:1) size of packets to send together");
 
 //dummy gereneration parameters
 module_param(dummy, bool, 0644);
@@ -474,39 +480,44 @@ void SA_Logic(struct xfrm_state *x)
 	int pktlen;
 	int padlen;
 	unsigned long delay;
+	int i;
 	
-	//if (x->dummy_route!=NULL) dequeue(x,pktlen);
-	if (x->dummy_route!=NULL) {
-	    skb = dequeue(x);
-	}
+	for (i=0; i<batch_size; i++) {
 
-	if (skb) {
-		//switch (x->size_algorithm){
-		switch (size_algorithm){
-			case 0:	
-			case 1:	//CBR
-				pktlen = am_pktlen;
-				packet_transform_len(x, skb, pktlen);
-				break;
-
-			case 2:	//random size 
-				//between [min_pktlen,max_pktlen]
-				get_random_bytes(&rand1,4);
-				pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen+1) ;
-				packet_transform_len(x, skb, pktlen);
-				break;
-
-			case 3:	//random padding 
-				//between [0,rnd_pad]
-				get_random_bytes(&rand1,4);
-				padlen = rand1%(rnd_pad+1) ;
-				packet_transform_pad(x, skb, padlen);
-				break;
+		if (x->dummy_route!=NULL) {
+			skb = dequeue(x);
 		}
 
-		//send the packet
-		dst_output(skb);
+		if (skb) {
+			//switch (x->size_algorithm){
+			switch (size_algorithm){
+				case 0:	
+				case 1:	//CBR
+					pktlen = am_pktlen;
+					packet_transform_len(x, skb, pktlen);
+					break;
+
+				case 2:	//random size 
+					//between [min_pktlen,max_pktlen]
+					get_random_bytes(&rand1,4);
+					pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen+1) ;
+					packet_transform_len(x, skb, pktlen);
+					break;
+
+				case 3:	//random padding 
+					//between [0,rnd_pad]
+					get_random_bytes(&rand1,4);
+					padlen = rand1%(rnd_pad+1) ;
+					packet_transform_pad(x, skb, padlen);
+					break;
+			}
+
+			//send the packet
+			dst_output(skb);
 	
+		}
+		
+		//build dummies after sending the whole batch
 		if (dummy_sent) {
 			build_dummy_pkt(x);
 		}
