@@ -57,43 +57,6 @@ static int ip_clear_mutable_options(struct iphdr *iph, u32 *daddr)
 	return 0;
 }
 
-void tfch_insert(struct sk_buff *skb)
-{	
-	struct iphdr *old_iph;
-	struct ip_tfc_hdr *tfch;
-	int ihl;
-	
-	printk(KERN_INFO "tfch_insert: skb->len:%d headroom:%d, tailroom:%d\n", skb->len, skb_headroom(skb), skb_tailroom(skb));
-
-	ihl = skb->nh.iph->ihl*4;
-	old_iph = skb->nh.iph;
-
-	//extend skb to make space for TFC, store new "nh"
-	skb->nh.raw = skb_push(skb,sizeof(struct ip_tfc_hdr));
-	   
-	memmove(skb->nh.iph, old_iph, ihl);
-
-	tfch = (void*) skb->h.raw - sizeof(struct ip_tfc_hdr);
-
-	printk(KERN_INFO "tfch_insert: skb->len:%d data-nh:%d, data-h:%d\n", skb->len, skb->data-skb->nh.raw, skb->data-skb->h.raw);
-
-	//link in TFC in the protocol "stack"
-	tfch->nexthdr = skb->nh.iph->protocol;
-	skb->nh.iph->protocol = IPPROTO_TFC;
-
-	//set payload size
-	tfch->payloadsize = (u_int16_t) skb->len - ihl - sizeof(struct ip_tfc_hdr) -24;
-
-
-	//set ip length field
-	skb->nh.iph->tot_len = htons(skb->len);
-
-	ip_send_check(skb->nh.iph);
-
-	return;
-}
-
-
 static int ah_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -104,9 +67,6 @@ static int ah_output(struct xfrm_state *x, struct sk_buff *skb)
 		struct iphdr	iph;
 		char 		buf[60];
 	} tmp_iph;
-
-	//CSABA
-	tfch_insert(skb);
 
 	top_iph = skb->nh.iph;
 	iph = &tmp_iph.iph;
@@ -167,6 +127,15 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	struct ip_auth_hdr *ah;
 	struct ah_data *ahp;
 	char work_buf[60];
+
+	//TFC
+	//int tfc_payloadsize;
+	//struct ip_frag_hdr *fragh;
+        struct ip_tfc_hdr *tfch;
+	//struct iphdr *iph;
+	int ihl;
+	int i;
+
 	//printk(KERN_INFO "MAR ah4_input called \n");
 	if (!pskb_may_pull(skb, sizeof(struct ip_auth_hdr)))
 		goto out;
@@ -222,6 +191,49 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	skb_pull(skb, skb->nh.iph->ihl*4);
 	skb->h.raw = skb->data;
 
+
+	//TFC
+	//iph = skb->nh.iph;
+	ihl = skb->nh.iph->ihl*4;
+	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + ihl);
+
+	//printk(KERN_INFO "hook called: protocol:%d totlen:%d\n", skb->nh.iph->protocol, ntohs(skb->nh.iph->tot_len));
+	//printk(KERN_INFO "hook called: nh-data:%d h-data:%d len:%d\n ", skb->nh.raw-skb->data, skb->h.raw-skb->data, skb->len);
+	//for (i=0; i<40; i++){
+	//	printk(KERN_INFO "%x", *(skb->nh.raw+i));
+	//	if (skb->nh.raw+i == skb->h.raw || skb->nh.raw+i == skb->data) printk(KERN_INFO "\n"); 
+	//	if (skb->nh.raw+i == skb->tail) break; 
+	//}
+	//printk(KERN_INFO "\n");
+
+
+	if ((skb_is_nonlinear(skb) || skb_cloned(skb)) &&
+	    skb_linearize(skb, GFP_ATOMIC) != 0) {
+		printk(KERN_INFO "hook called: ERROR: cannot linearize!");
+	}
+
+	skb->ip_summed = CHECKSUM_NONE;
+
+
+	//change protocol from TFC to the next one in iph	
+	skb->nh.iph->protocol = tfch->nexthdr;
+	//cut padding
+	//pskb_trim(skb, iph->ihl*4 + sizeof(struct ip_tfc_hdr) + tfch->payloadsize);
+	//save ip header in temporary work buffer
+
+	//tfc_payloadsize = tfch->payloadsize;
+	//memmove(skb->h.raw, skb->h.raw + sizeof(struct ip_tfc_hdr), tfc_payloadsize);
+	//skb_trim(skb, iph->ihl*4 + tfc_payloadsize);
+        
+	memmove(skb->nh.raw + sizeof(struct ip_tfc_hdr), skb->nh.raw, ihl);
+	skb_pull(skb, sizeof(struct ip_tfc_hdr));
+	skb->h.raw += sizeof(struct ip_tfc_hdr);
+	skb->nh.raw += sizeof(struct ip_tfc_hdr);
+	//memcpy(skb->nh.raw, workbuf, iph->ihl*4);
+	
+	skb->nh.iph->tot_len = htons(skb->len);
+	//TFC END
+	
 	return 0;
 
 out:
