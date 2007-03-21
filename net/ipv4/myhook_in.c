@@ -152,7 +152,7 @@ unsigned int tfc_hook_in(unsigned int hooknum,
 
 	if (sb->nh.iph->protocol == IPPROTO_TFC){
 		printk(KERN_INFO "EMA protocol ip : %d \n", sb->nh.iph->protocol);
-		skb_trim(sb, iph->ihl*4 + tfch->payloadsize);
+		//skb_trim(sb, iph->ihl*4 + tfch->payloadsize);
 		sb = tfc_input(sb);
 		if (sb->nh.iph->protocol == NEXTHDR_FRAGMENT_TFC){
 			printk(KERN_INFO "EMA fragment received \n");
@@ -189,7 +189,7 @@ unsigned int tfc_hook_in(unsigned int hooknum,
 		return NF_ACCEPT;
 	}
 
-	printk(KERN_INFO "MAR myhook_in : no tfc packet \n");
+	printk(KERN_INFO "MAR myhook_in : no tfc packet ip protocol: %d\n", iph->protocol);
 	//dst_hold(sb->dst);
 	return NF_ACCEPT;
 	

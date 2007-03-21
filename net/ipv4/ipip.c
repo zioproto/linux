@@ -494,6 +494,7 @@ static int ipip_rcv(struct sk_buff *skb)
 		tunnel->stat.rx_packets++;
 		tunnel->stat.rx_bytes += skb->len;
 		skb->dev = tunnel->dev;
+		printk(KERN_INFO "MAR ipip - call dst_release\n");
 		dst_release(skb->dst);
 		skb->dst = NULL;
 		nf_reset(skb);

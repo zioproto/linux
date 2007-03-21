@@ -158,6 +158,7 @@ struct xfrm_state
 	struct sk_buff_head	tfc_list;
 	struct sk_buff_head	dummy_list;
 	int algorithm;
+	int tfc;
 };
 
 enum {

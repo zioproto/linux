@@ -19,6 +19,7 @@
 
 int xfrm4_rcv(struct sk_buff *skb)
 {
+	printk(KERN_INFO "MAR xfrm4_rcv called \n");
 	return xfrm4_rcv_encap(skb, 0);
 }
 
@@ -35,15 +36,17 @@ static inline void ipip_ecn_decapsulate(struct sk_buff *skb)
 
 static int xfrm4_parse_spi(struct sk_buff *skb, u8 nexthdr, u32 *spi, u32 *seq)
 {
+	printk(KERN_INFO "MAR xfrm4_parse_spi called \n");
 	switch (nexthdr) {
 	case IPPROTO_IPIP:
+		printk(KERN_INFO "MAR xfrm4_parse_spi case: IPIP\n");
 		if (!pskb_may_pull(skb, sizeof(struct iphdr)))
 			return -EINVAL;
 		*spi = skb->nh.iph->saddr;
 		*seq = 0;
 		return 0;
 	}
-
+	printk(KERN_INFO "MAR xfrm4_parse_spi finished \n");
 	return xfrm_parse_spi(skb, nexthdr, spi, seq);
 }
 
@@ -64,6 +67,13 @@ drop:
 }
 #endif
 
+int tfc_tunnel_rcv(struct sk_buff *skb)
+{
+	if (skb->nh.iph->protocol == IPPROTO_TFC)
+		NF_HOOK(PF_INET, NF_IP_LOCAL_IN, skb, skb->dev, NULL, tfc_tunnel_rcv);
+	return 0;
+}
+
 int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 {
 	int err;
@@ -72,10 +82,9 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 	struct xfrm_state *x;
 	int xfrm_nr = 0;
 	int decaps = 0;
-
+	printk(KERN_INFO "MAR xfrm4_rcv_encap called \n");
 	if ((err = xfrm4_parse_spi(skb, skb->nh.iph->protocol, &spi, &seq)) != 0)
 		goto drop;
-
 	do {
 		struct iphdr *iph = skb->nh.iph;
 
@@ -116,8 +125,11 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 		iph = skb->nh.iph;
 
 		if (x->props.mode) {
-			if (iph->protocol != IPPROTO_IPIP)
+			//Marco
+			if (!((iph->protocol == IPPROTO_IPIP) || (iph->protocol == IPPROTO_TFC))) {
+				printk(KERN_INFO "MAR Tunnel mode: no IPIP\n");
 				goto drop;
+			}
 			if (!pskb_may_pull(skb, sizeof(struct iphdr)))
 				goto drop;
 			if (skb_cloned(skb) &&
@@ -127,8 +139,14 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 				ipv4_copy_dscp(iph, skb->h.ipiph);
 			if (!(x->props.flags & XFRM_STATE_NOECN))
 				ipip_ecn_decapsulate(skb);
+			printk(KERN_INFO "MAR xfrm4_rcv_encap ip protocol: %d\n", iph->protocol);
+			if (iph->protocol == IPPROTO_TFC) {
+				printk(KERN_INFO "MAR xfrm4_rcv_encap tfc_tunnel_rcv call\n");
+				decaps = tfc_tunnel_rcv(skb);
+			}
 			skb->mac.raw = memmove(skb->data - skb->mac_len,
 					       skb->mac.raw, skb->mac_len);
+			
 			skb->nh.raw = skb->data;
 			memset(&(IPCB(skb)->opt), 0, sizeof(struct ip_options));
 			decaps = 1;
@@ -155,15 +173,21 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 
 	memcpy(skb->sp->x+skb->sp->len, xfrm_vec, xfrm_nr*sizeof(struct sec_decap_state));
 	skb->sp->len += xfrm_nr;
-
+	printk(KERN_INFO "MAR xfrm4_rcv_encap call nf_reset\n");
 	nf_reset(skb);
-
+	printk(KERN_INFO "MAR xfrm4_rcv_encap nf_reset called\n");
+	printk(KERN_INFO "MAR xfrm4_rcv_encap ip protocol: %d\n", skb->nh.iph->protocol);
 	if (decaps) {
 		if (!(skb->dev->flags&IFF_LOOPBACK)) {
+			printk(KERN_INFO "MAR xfrm4_rcv_encap decaps=1 dst_release\n");
+			printk(KERN_INFO "MAR xfrm4_rcv_encap ip protocol: %d\n", skb->nh.iph->protocol);
 			dst_release(skb->dst);
+			printk(KERN_INFO "MAR xfrm4_rcv_encap ip protocol: %d\n", skb->nh.iph->protocol);
 			skb->dst = NULL;
 		}
 		netif_rx(skb);
+		printk(KERN_INFO "MAR xfrm4_rcv_encap decaps finished\n");
+		printk(KERN_INFO "MAR xfrm4_rcv_encap ip protocol: %d\n", skb->nh.iph->protocol);
 		return 0;
 	} else {
 #ifdef CONFIG_NETFILTER
@@ -173,16 +197,20 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 
 		NF_HOOK(PF_INET, NF_IP_PRE_ROUTING, skb, skb->dev, NULL,
 		        xfrm4_rcv_encap_finish);
+		printk(KERN_INFO "MAR xfrm4_rcv_encap CONFIG_NETFILTER finished\n");
 		return 0;
 #else
+		printk(KERN_INFO "MAR xfrm4_rcv_encap finished \n");
 		return -skb->nh.iph->protocol;
 #endif
 	}
 
 drop_unlock:
+	printk(KERN_INFO "MAR xfrm4_rcv_encap drop_unlock \n");
 	spin_unlock(&x->lock);
 	xfrm_state_put(x);
-drop:
+drop:	
+	printk(KERN_INFO "MAR xfrm4_rcv_encap drop \n");
 	while (--xfrm_nr >= 0)
 		xfrm_state_put(xfrm_vec[xfrm_nr].xvec);
 

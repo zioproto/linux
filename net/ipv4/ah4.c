@@ -181,7 +181,7 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	skb->nh.iph->tot_len = htons(skb->len);
 	skb_pull(skb, skb->nh.iph->ihl*4);
 	skb->h.raw = skb->data;
-
+	printk(KERN_INFO "MAR ah4_input - ip protocol: %d \n", skb->nh.iph->protocol);
 	return 0;
 
 out:

@@ -18,7 +18,6 @@
 #include <net/icmp.h>
 
 //fabrizio
-#define TFC_APPLY 1
 #include <net/my_tfc.h>
 //#include <net/myhook_files.h>
 
@@ -44,20 +43,8 @@ static void xfrm4_encap(struct sk_buff *skb)
 	struct iphdr *iph, *top_iph;	
 	int flags;
 
-	/*fabrizio
-	se la SA di tipo ESP richiede di applicare TFC per fare padding
-	*/
-
-	//KIRALY: we have already done the padding, commented out
-	//if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
-		//padding_insert(skb);
-		//tfc_insert(skb);
-
 	iph = skb->nh.iph;
 	skb->h.ipiph = iph;
-	//printk(KERN_INFO "MAR iph->protocol:%d\n", iph->protocol);
-	//printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",
-	//		skb->nh.iph->protocol, skb->nh.iph);
 	
 	skb->nh.raw = skb_push(skb, x->props.header_len);
 	
@@ -66,9 +53,6 @@ static void xfrm4_encap(struct sk_buff *skb)
 	if (!x->props.mode) {
 		skb->h.raw += iph->ihl*4;
 		memmove(top_iph, iph, iph->ihl*4);
-	
-		//printk(KERN_INFO "FAB xfrm4_encap - nh proto:%d,address:%x,\n",\
-		//	skb->nh.iph->protocol, skb->nh.iph);
 
 		return;
 	}
@@ -93,16 +77,17 @@ static void xfrm4_encap(struct sk_buff *skb)
 	top_iph->saddr = x->props.saddr.a4;
 	top_iph->daddr = x->id.daddr.a4;
 	
-	//fabrizio
+	//Marco
+	/*In tunnel mode con TFC il campo protocol del
+	  new hdr ip deve essere IPPROTO_TFC
+	*/
 //ESP->AH	if((x->id.proto == IPPROTO_ESP) && TFC_APPLY)
-	if((x->id.proto == TFC_ATTACH_PROTO) && TFC_APPLY)
+	if((x->id.proto == TFC_ATTACH_PROTO) && (x->tfc == 1))
 		top_iph->protocol = IPPROTO_TFC;
 	else	
 		top_iph->protocol = IPPROTO_IPIP;
 
 	memset(&(IPCB(skb)->opt), 0, sizeof(struct ip_options));
-	//fabrizio
-	//printk(KERN_INFO "FAB xfrm4_encap - end of function\n");
 }
 
 static int xfrm4_tunnel_check_size(struct sk_buff *skb)
