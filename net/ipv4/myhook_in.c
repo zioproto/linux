@@ -66,7 +66,8 @@ static struct sk_buff* tfc_input(struct sk_buff *skb)
 	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
 	fragh = (struct ip_frag_hdr*)((skb->nh.raw + (iph->ihl*4) + sizeof(struct ip_tfc_hdr)));
 	printk(KERN_INFO "RICEVUTO PACCHETTO TFC \n");
-
+	
+	skb_linearize(skb,GFP_ATOMIC); 
 	//change protocol from TFC to the next one in iph	
 	skb->nh.iph->protocol = tfch->nexthdr;
 	//cut padding

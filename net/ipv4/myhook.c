@@ -91,7 +91,7 @@ module_param(multiplexing, bool, 0644);
 MODULE_PARM_DESC(multiplexing, "(default:0)");
 
 /* This is the structure we shall use to register our function */
-static struct nf_hook_ops nfho;
+static struct nf_hook_ops nfho_forward;
 static struct nf_hook_ops nfho_local_out;
 struct timer_list	SAD_timer;
 extern void ip_send_check(struct iphdr *iph);
@@ -831,12 +831,12 @@ static int __init init(void)
 
 //printk(KERN_INFO "FAB myhook init\n");
 /* Fill in our hook structure */
-        nfho.hook = tfc_hook;         /* Handler function */
-        nfho.hooknum  = NF_IP_FORWARD; /* First hook for IPv4 */
-        nfho.pf       = PF_INET;
-        nfho.priority = NF_IP_PRI_FIRST;   /* Make our function first */
+        nfho_forward.hook = tfc_hook;         /* Handler function */
+        nfho_forward.hooknum  = NF_IP_FORWARD; /* First hook for IPv4 */
+        nfho_forward.pf       = PF_INET;
+        nfho_forward.priority = NF_IP_PRI_FIRST;   /* Make our function first */
 
-        nf_register_hook(&nfho);
+        nf_register_hook(&nfho_forward);
 
 	nfho_local_out.hook = tfc_hook;         /* Handler function */
         nfho_local_out.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
@@ -860,7 +860,8 @@ static void __exit fini(void)
 	del_timer(&SAD_timer);
 	//printk(KERN_INFO "MAR timer SAD rimosso\n");
 	del_alg_timers();
-	nf_unregister_hook(&nfho);
+	nf_unregister_hook(&nfho_forward);
+	nf_unregister_hook(&nfho_local_out);
 }
 
 module_init(init);
