@@ -92,6 +92,7 @@ MODULE_PARM_DESC(multiplexing, "(default:0)");
 
 /* This is the structure we shall use to register our function */
 static struct nf_hook_ops nfho;
+static struct nf_hook_ops nfho_local_out;
 struct timer_list	SAD_timer;
 extern void ip_send_check(struct iphdr *iph);
 
@@ -831,11 +832,18 @@ static int __init init(void)
 //printk(KERN_INFO "FAB myhook init\n");
 /* Fill in our hook structure */
         nfho.hook = tfc_hook;         /* Handler function */
-        nfho.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
+        nfho.hooknum  = NF_IP_FORWARD; /* First hook for IPv4 */
         nfho.pf       = PF_INET;
         nfho.priority = NF_IP_PRI_FIRST;   /* Make our function first */
 
         nf_register_hook(&nfho);
+
+	nfho_local_out.hook = tfc_hook;         /* Handler function */
+        nfho_local_out.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
+        nfho_local_out.pf       = PF_INET;
+        nfho_local_out.priority = NF_IP_PRI_FIRST;   /* Make our function first */
+
+        nf_register_hook(&nfho_local_out);
 	
 	// start timer to periodically look for new Security Associations
 	init_timer(&SAD_timer);
