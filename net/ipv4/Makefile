@@ -46,6 +46,5 @@ obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
 		      xfrm4_output.o
 
 #Marco
-obj-$(CONFIG_MYHOOK) += myhook.o
-obj-$(CONFIG_MYHOOK_IN) += myhook_in.o
-obj-$(CONFIG_TFCTCP) += tfctcp.o tfctcp_in.o
+obj-$(CONFIG_TFC) += tfc.o
+obj-$(CONFIG_TFC_HOOK) += tfc_hook.o tfc_hook_in.o

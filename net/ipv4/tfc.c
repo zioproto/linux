@@ -16,13 +16,14 @@
 #include <net/dst.h>
 #include <net/xfrm.h>
 #include <linux/skbuff.h>
+#include <net/ip.h>
 
-#include <net/my_tfc.h>
+#include <net/tfc.h>
 #include <linux/random.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Fabrizio Formisano");
-MODULE_DESCRIPTION("myhook function");
+MODULE_AUTHOR("Fabrizio Formisano, Kiraly Csaba");
+MODULE_DESCRIPTION("myhook functions");
 
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
@@ -48,6 +49,10 @@ int ident_frag = 0;
 
 int a = 0;
 char dummy_sent; //bool signaling that a dummy was sent, dummy queue should be refilled
+
+static struct sk_buff_head tfc_defrag_list;
+static int tfc_frag_len = 0;
+static int tot_len = 0;
 
 //TFC protocol integration parameters
 module_param(header, bool , 0644);
@@ -90,56 +95,8 @@ MODULE_PARM_DESC(fragmentation, "(default:0)");
 module_param(multiplexing, bool, 0644);
 MODULE_PARM_DESC(multiplexing, "(default:0)");
 
-/* This is the structure we shall use to register our function */
-static struct nf_hook_ops nfho_forward;
-static struct nf_hook_ops nfho_local_out;
-struct timer_list	SAD_timer;
-extern void ip_send_check(struct iphdr *iph);
-
-/* This is the hook function itself.
-   Check if there are related XFRMs. If no, return accept.
-   Search for the first ESP in the XFRM stack. 
-   If found, steal the packet and put it in the queue of that XFRM */
-unsigned int tfc_hook(unsigned int hooknum,
-                       struct sk_buff **skb,
-                       const struct net_device *in,
-                       const struct net_device *out,
-                       int (*okfn)(struct sk_buff *))
-{
-	
-	/* IP address we want to drop packets from, in NB order */
-	struct sk_buff *sb = *skb;
-	struct dst_entry *dst = sb->dst;
-	struct xfrm_state *x;
-	struct iphdr *iph;
-	int i;
-	//printk(KERN_INFO "FAB myhook eseguito correttamente\n");
-	iph = (struct iphdr *)sb->data;
-	if (!sb->dst->xfrm) {
-		//printk(KERN_INFO "FAB myhook -	nessuna policy da applicare\n");
-		return NF_ACCEPT;	//ipsec non applicato a questo pacchetto
-	}
-	
-	/*Loop to search for the first ESP in the XFRM stack. */
-	x = dst->xfrm;
-	i = 0;
-	do{	//printk(KERN_INFO "FAB myhook - i:%d\n",i);
-		i++;
-//ESP->AH	if(x->id.proto == IPPROTO_ESP){
-		if(x->id.proto == TFC_ATTACH_PROTO){
-			//printk(KERN_INFO "FAB myhook - found ESP SA, enqueue pkt\n");
-			skb_queue_tail(&x->tfc_list,sb);
-			//printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
-			return NF_STOLEN;
-		}
-		dst = dst->child; //scorro la catena di dst_entry
-		x = dst->xfrm;
-	} while (x);
-
-	//printk(KERN_INFO "FAB myhook - SA not found\n");
-	return NF_ACCEPT; //abbiamo cercato su tutta la catena di dst_entry senza trovare la SA cercata
-}
-
+//struct timer_list	SAD_timer;
+//extern void ip_send_check(struct iphdr *iph);
 
 
 /**
@@ -499,7 +456,11 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 		orig_size = skb->len;
 		padding_needed = pkt_size - orig_size - sizeof(struct ip_tfc_hdr);
 	}
-	//if padding needed
+
+	//look for multiplexing possibility.
+	//If there is space and there are more packets in the queue, we insert the header, and go on with the next one ...
+
+	//if padding needed	
 	if (padding && padding_needed > 0) {
 		//pad
 		payload_size = orig_size;
@@ -539,6 +500,124 @@ void packet_transform_pad(struct xfrm_state *x, struct sk_buff *skb, int pad_siz
         if (padding || fragmentation || multiplexing) {
     		tfch_insert(skb,orig_size);
     	}
+}
+
+
+struct sk_buff* tfc_input(struct sk_buff *skb)
+{
+	int tfc_payloadsize;
+	struct ip_frag_hdr *fragh;
+        struct ip_tfc_hdr *tfch;
+	struct iphdr *iph;
+
+	printk(KERN_INFO "MAR myhook_in - tfc_input \n");
+	iph = skb->nh.iph;
+	tfch = (struct ip_tfc_hdr*) (skb->nh.raw + (iph->ihl*4));
+	fragh = (struct ip_frag_hdr*)((skb->nh.raw + (iph->ihl*4) + sizeof(struct ip_tfc_hdr)));
+	printk(KERN_INFO "RICEVUTO PACCHETTO TFC \n");
+	
+	skb_linearize(skb,GFP_ATOMIC); 
+	//change protocol from TFC to the next one in iph	
+	skb->nh.iph->protocol = tfch->nexthdr;
+	//cut padding
+	//pskb_trim(skb, iph->ihl*4 + sizeof(struct ip_tfc_hdr) + tfch->payloadsize);
+	//save ip header in temporary work buffer
+	tfc_payloadsize = tfch->payloadsize;
+	memmove(skb->h.raw, skb->h.raw + sizeof(struct ip_tfc_hdr), tfc_payloadsize);
+	skb_trim(skb, iph->ihl*4 + tfc_payloadsize);
+        
+	//skb->h.raw = skb_pull(skb, sizeof(struct ip_tfc_hdr));
+	//skb->nh.raw += sizeof(struct ip_tfc_hdr);
+	//memcpy(skb->nh.raw, workbuf, iph->ihl*4);
+	
+	skb->nh.iph->tot_len = htons(skb->len);
+
+	printk(KERN_INFO "MAR - tfcrimosso iph-protocol: %d \n", skb->nh.iph->protocol);
+
+	return skb;
+}
+
+
+static void tfc_defrag(struct sk_buff *skb) 
+{
+	struct sk_buff *skb_frag;
+	struct ip_frag_hdr *fragh, *fragh_new;
+	struct iphdr *iph_new;
+	int datalen = skb->len;
+	
+	//skb_reserve(skb, 20);
+	//skb_push(skb, 20);
+	//skb_put(skb, tot_len); 
+	//skb->nh.raw = (void*) skb->data;
+	iph_new = skb->nh.iph;
+	fragh = skb->nh.raw + iph_new->ihl*4;
+	iph_new->protocol = fragh->nexthdr;
+	pskb_expand_head(skb, 0, tfc_frag_len - sizeof(struct ip_frag_hdr), GFP_ATOMIC);
+	skb_put(skb, tfc_frag_len - sizeof(struct ip_frag_hdr));
+	memmove(skb->data + iph_new->ihl*4 + ((fragh->offset) & 0x7fff), skb->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), datalen - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+	
+	printk(KERN_INFO "EMA prima del while \n");
+	while (!skb_queue_empty(&tfc_defrag_list)){
+		skb_frag = skb_dequeue(&tfc_defrag_list);
+		fragh_new = skb_frag->nh.raw + iph_new->ihl*4;
+		if((fragh_new->offset & 0x8000) == 0x8000){
+			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+		}else {
+			pskb_expand_head(skb, 0, skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr), GFP_ATOMIC);
+			skb_put(skb, skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+		}
+	}
+	printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
+	skb->h.raw = fragh;
+	ip_send_check(iph_new);
+	skb->nh.iph->tot_len = skb->len;
+	//ip_send_check(iph_new);
+	return;
+	
+}
+
+unsigned int tfc_defrag1(struct sk_buff *sb){
+ 	struct ip_frag_hdr *fragh;
+// 	struct sk_buff_head *code;
+// 	static struct sk_buff_head skb_list;
+// 	int headerlen;
+	struct iphdr *iph;
+	struct ip_tfc_hdr *tfch;
+
+	tfch = (void*) sb->h.raw;
+	iph = sb->nh.raw;
+
+
+
+	printk(KERN_INFO "EMA fragment received \n");
+	fragh = (void*) sb->h.raw;
+ 			
+	if ((fragh->offset & 0x8000) == 0x8000){ //Se M = 1
+		printk(KERN_INFO "EMA no last fragment\n");
+		tfc_frag_len += sb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr);
+	} else {
+		printk(KERN_INFO "EMA last fragment\n");
+		tot_len += fragh->offset;
+	}		
+
+//	printk(KERN_INFO "MAR myhook_in stolen packets \n");
+//	return NF_STOLEN;
+	printk(KERN_INFO "EMA tfc_frag_len (a) = %d\n", tfc_frag_len);
+	printk(KERN_INFO "EMA tot_len (b) = %d\n", tot_len);
+	if(tfc_frag_len == tot_len) {
+		printk(KERN_INFO "EMA total fragment\n");
+		//return NF_STOLEN;
+		tfc_defrag(sb);
+		tfc_frag_len = 0;
+		tot_len = 0;
+		printk(KERN_INFO "EMA defragment\n");
+		printk(KERN_INFO "EMA accept\n");
+		return NF_ACCEPT;
+	}
+	skb_queue_tail(&tfc_defrag_list, sb);
+	printk(KERN_INFO "EMA stolen\n");
+	return NF_STOLEN;
 }
 		
 
@@ -733,135 +812,19 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	
 }
 
-
-/**
-SAD_check viene fatta partire da init e periodicamente controlla il SAD, per 
-inizializzare le funzioni di TFC per ogni nuova SA ESP eventualmente inserita
-*/
-void SAD_check(void)
-{
-	struct list_head *state_list;
-	struct xfrm_state_afinfo *afinfo;
-	int i;
-	struct xfrm_state *x;
-
-	//printk(KERN_INFO "FAB SAD_check\n");
-	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
-	xfrm_state_get_afinfo*/
-	afinfo = xfrm_state_get_afinfo(AF_INET);
-	state_list = afinfo->state_bydst;
-
-	//spin_lock_bh(&xfrm_state_lock);
-		
-	/*we use afinfo to access the list of SAs. Afinfo has two pointers to the head of two 
-	different lists, one by address and one by SPI; we can indifferently use both of them to go 
-	through all the SAs. In reality xfrm uses not a single list, but an array of lists of 
-	XFRM_DST_HSIZE elements, and SA are inserted in a list according to their hash value.
-	We search through all the SAs inserted in the SAD, and, for all ESP SAs found, */
-
-	for (i = 0; i < XFRM_DST_HSIZE; i++) {
-//		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
-		list_for_each_entry(x, state_list+i, bydst) {
-//			printk(KERN_INFO "FAB myhook init - entry:%d\n",x->id.proto);
-//ESP->AH			if ((x->id.proto == IPPROTO_ESP)&&(x->dummy_route == NULL)) {
-				if ((x->id.proto == TFC_ATTACH_PROTO)&&(x->dummy_route == NULL)) {
-					//inizializzo le funzioni di TFC per la nuova SA
-					EspTfc_SA_init(x);
-				}
-
-		}
-	}
-	
-	//ogni 15 secondi controllo nuovamente il SAD
-	del_timer(&SAD_timer);
-	SAD_timer.expires = jiffies + HZ*15;
-	add_timer(&SAD_timer);
-}
-
-void del_alg_timers(void)
-{
-	struct list_head *state_list;
-	struct xfrm_state_afinfo *afinfo;
-	int i;
-	struct xfrm_state *x;
-
-	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
-	xfrm_state_get_afinfo*/
-	afinfo = xfrm_state_get_afinfo(AF_INET);
-	state_list = afinfo->state_bydst;
-
-	//spin_lock_bh(&xfrm_state_lock);
-		
-	/*we use afinfo to access the list of SAs. Afinfo has two pointers to the head of two 
-	different lists, one by address and one by SPI; we can indifferently use both of them to go 
-	through all the SAs. In reality xfrm uses not a single list, but an array of lists of 
-	XFRM_DST_HSIZE elements, and SA are inserted in a list according to their hash value.
-	We search through all the SAs inserted in the SAD, and, for all ESP SAs found, */
-
-	for (i = 0; i < XFRM_DST_HSIZE; i++) {
-//		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
-		list_for_each_entry(x, state_list+i, bydst) {
-//			printk(KERN_INFO "FAB myhook init - entry:%d\n",x->id.proto);
-				if ((x->id.proto == TFC_ATTACH_PROTO)&&(x->dummy_route != NULL)) {
-					//delete alg timer
-					del_timer(&x->tfc_alg_timer);
-					x->tfc = 0;
-				}
-
-		}
-	}
-}
-
-
-
-
-EXPORT_SYMBOL(dequeue);
 EXPORT_SYMBOL(EspTfc_SA_init);
-EXPORT_SYMBOL(tfch_insert);
-EXPORT_SYMBOL(tfc_fragment);
+EXPORT_SYMBOL(tfc_input);
+EXPORT_SYMBOL(tfc_defrag1);
 
-/**
-ESP richiede il modulo myhook, che quindi viene caricato automaticamente all'avvio, quando le SA non sono ancora definite, per cui non è possibile inizializzare le code e i dummy;inoltre se viene aggiun ta una nuova SA, deve essere possibile inizializzare le funzioni di TFC. Soluzione:
-la funzione di init avvia un timer che periodicamente controlla se ci sono nuove ESP SA e in caso affermativo esegue EspTfc_SA_init
 
-*/
 static int __init init(void)
 {
-	
-
-//printk(KERN_INFO "FAB myhook init\n");
-/* Fill in our hook structure */
-        nfho_forward.hook = tfc_hook;         /* Handler function */
-        nfho_forward.hooknum  = NF_IP_FORWARD; /* First hook for IPv4 */
-        nfho_forward.pf       = PF_INET;
-        nfho_forward.priority = NF_IP_PRI_FIRST;   /* Make our function first */
-
-        nf_register_hook(&nfho_forward);
-
-	nfho_local_out.hook = tfc_hook;         /* Handler function */
-        nfho_local_out.hooknum  = NF_IP_LOCAL_OUT; /* First hook for IPv4 */
-        nfho_local_out.pf       = PF_INET;
-        nfho_local_out.priority = NF_IP_PRI_FIRST;   /* Make our function first */
-
-        nf_register_hook(&nfho_local_out);
-	
-	// start timer to periodically look for new Security Associations
-	init_timer(&SAD_timer);
-	SAD_timer.function = SAD_check;
-	//SAD_timer.expires = jiffies + HZ*15;
-	//add_timer(&SAD_timer);
-	SAD_check();
+	skb_queue_head_init(&tfc_defrag_list);
 	return 0;
 }
 
 static void __exit fini(void)
 {
-	//printk(KERN_INFO "FAB myhook fini\n");
-	del_timer(&SAD_timer);
-	//printk(KERN_INFO "MAR timer SAD rimosso\n");
-	del_alg_timers();
-	nf_unregister_hook(&nfho_forward);
-	nf_unregister_hook(&nfho_local_out);
 }
 
 module_init(init);
