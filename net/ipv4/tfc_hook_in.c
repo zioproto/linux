@@ -49,13 +49,13 @@ unsigned int tfc_hook_in(unsigned int hooknum,
 
 	if (sb->nh.iph->protocol == IPPROTO_TFC){
 		//printk(KERN_INFO "EMA protocol ip : %d \n", sb->nh.iph->protocol);
-		sb = tfc_input(sb);
+		tfc_remove(sb);
 		if (sb->nh.iph->protocol == NEXTHDR_FRAGMENT_TFC){
-			return tfc_defrag1(sb);
+			return tfc_defrag(sb);
 		}	
 	}
 
-	printk(KERN_INFO "MAR myhook_in : no tfc packet ip protocol: %d\n", iph->protocol);
+	//printk(KERN_INFO "MAR myhook_in : no tfc packet ip protocol: %d\n", iph->protocol);
 	//dst_hold(sb->dst);
 	return NF_ACCEPT;
 }

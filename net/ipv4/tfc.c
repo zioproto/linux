@@ -28,14 +28,13 @@ MODULE_DESCRIPTION("myhook functions");
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
 
-static int tfc = 1;
-static int dummy = 1;
+static int dummy = 0;
 static int padding = 1;
-static int fragmentation = 1;
+static int fragmentation = 0;
 static int multiplexing = 0;
 
 static int delay_algorithm = 1;
-static int sa_hz = 1;
+static int sa_hz = 10;
 
 static int batch_size = 1;
 static int picco = 0;
@@ -82,9 +81,6 @@ MODULE_PARM_DESC(rnd_pad, "(default:200)");
 module_param(batch_size, int , 0644);
 MODULE_PARM_DESC(batch_size, "(default:1) size of packets to send together");
 
-//tfc apply parameter
-module_param(tfc, int, 0644);
-MODULE_PARM_DESC(tfc, "(default:1), whether to use TFC in tunnel mode or not");
 //dummy gereneration parameters
 module_param(dummy, bool, 0644);
 MODULE_PARM_DESC(dummy, "(default:1), whether to use dummy packets or not");
@@ -100,10 +96,10 @@ MODULE_PARM_DESC(multiplexing, "(default:0)");
 
 
 /**
-build_dummy_pkt builds and equeues a dummy pkt in dummy_list, using the dummy route of the SA to route the
+build_dummy_pkt builds and queues a dummy pkt in dummy_list, using the dummy route of the SA to route the
 pkt
 */
-static void build_dummy_pkt(struct xfrm_state *x){
+void build_dummy_pkt(struct xfrm_state *x){
 	//x è la SA a cui è associato il traffico dummy
 	int i;
 	/*daddr - less important byte first*/
@@ -230,7 +226,7 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 			skb->nh.iph->protocol = IPPROTO_TFC;
 			if (am_pktlen > 1456)
 			skb->nh.iph->frag_off = 0x0000;
-			printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
+			//printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} 
 		else {  
 			//In Tunnel
@@ -503,7 +499,7 @@ void packet_transform_pad(struct xfrm_state *x, struct sk_buff *skb, int pad_siz
 }
 
 
-struct sk_buff* tfc_input(struct sk_buff *skb)
+unsigned int tfc_remove(struct sk_buff *skb)
 {
 	int tfc_payloadsize;
 	struct ip_frag_hdr *fragh;
@@ -533,12 +529,12 @@ struct sk_buff* tfc_input(struct sk_buff *skb)
 	skb->nh.iph->tot_len = htons(skb->len);
 
 	printk(KERN_INFO "MAR - tfcrimosso iph-protocol: %d \n", skb->nh.iph->protocol);
-
-	return skb;
+	
+	return NF_ACCEPT;
 }
 
 
-static void tfc_defrag(struct sk_buff *skb) 
+static void tfc_defrag2(struct sk_buff *skb) 
 {
 	struct sk_buff *skb_frag;
 	struct ip_frag_hdr *fragh, *fragh_new;
@@ -556,7 +552,7 @@ static void tfc_defrag(struct sk_buff *skb)
 	skb_put(skb, tfc_frag_len - sizeof(struct ip_frag_hdr));
 	memmove(skb->data + iph_new->ihl*4 + ((fragh->offset) & 0x7fff), skb->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), datalen - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
 	
-	printk(KERN_INFO "EMA prima del while \n");
+	//printk(KERN_INFO "EMA prima del while \n");
 	while (!skb_queue_empty(&tfc_defrag_list)){
 		skb_frag = skb_dequeue(&tfc_defrag_list);
 		fragh_new = skb_frag->nh.raw + iph_new->ihl*4;
@@ -568,7 +564,7 @@ static void tfc_defrag(struct sk_buff *skb)
 			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
 		}
 	}
-	printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
+	//printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
 	skb->h.raw = fragh;
 	ip_send_check(iph_new);
 	skb->nh.iph->tot_len = skb->len;
@@ -577,7 +573,7 @@ static void tfc_defrag(struct sk_buff *skb)
 	
 }
 
-unsigned int tfc_defrag1(struct sk_buff *sb){
+unsigned int tfc_defrag(struct sk_buff *sb){
  	struct ip_frag_hdr *fragh;
 // 	struct sk_buff_head *code;
 // 	static struct sk_buff_head skb_list;
@@ -588,35 +584,33 @@ unsigned int tfc_defrag1(struct sk_buff *sb){
 	tfch = (void*) sb->h.raw;
 	iph = sb->nh.raw;
 
-
-
-	printk(KERN_INFO "EMA fragment received \n");
+	//printk(KERN_INFO "EMA fragment received \n");
 	fragh = (void*) sb->h.raw;
  			
 	if ((fragh->offset & 0x8000) == 0x8000){ //Se M = 1
-		printk(KERN_INFO "EMA no last fragment\n");
+		//printk(KERN_INFO "EMA no last fragment\n");
 		tfc_frag_len += sb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr);
 	} else {
-		printk(KERN_INFO "EMA last fragment\n");
+		//printk(KERN_INFO "EMA last fragment\n");
 		tot_len += fragh->offset;
 	}		
 
-//	printk(KERN_INFO "MAR myhook_in stolen packets \n");
-//	return NF_STOLEN;
-	printk(KERN_INFO "EMA tfc_frag_len (a) = %d\n", tfc_frag_len);
-	printk(KERN_INFO "EMA tot_len (b) = %d\n", tot_len);
+	//printk(KERN_INFO "MAR myhook_in stolen packets \n");
+	//return NF_STOLEN;
+	//printk(KERN_INFO "EMA tfc_frag_len (a) = %d\n", tfc_frag_len);
+	//printk(KERN_INFO "EMA tot_len (b) = %d\n", tot_len);
 	if(tfc_frag_len == tot_len) {
-		printk(KERN_INFO "EMA total fragment\n");
+		//printk(KERN_INFO "EMA total fragment\n");
 		//return NF_STOLEN;
-		tfc_defrag(sb);
+		tfc_defrag2(sb);
 		tfc_frag_len = 0;
 		tot_len = 0;
-		printk(KERN_INFO "EMA defragment\n");
-		printk(KERN_INFO "EMA accept\n");
+		//printk(KERN_INFO "EMA defragment\n");
+		//printk(KERN_INFO "EMA accept\n");
 		return NF_ACCEPT;
 	}
 	skb_queue_tail(&tfc_defrag_list, sb);
-	printk(KERN_INFO "EMA stolen\n");
+	//printk(KERN_INFO "EMA stolen\n");
 	return NF_STOLEN;
 }
 		
@@ -639,6 +633,9 @@ void SA_Logic(struct xfrm_state *x)
 	int padlen;
 	unsigned long delay;
 	int i;
+	
+	//printk(KERN_INFO "KIR SA_Logic\n");
+	
 	if (picco == 1){
 		unsigned long	rand2;
 		get_random_bytes(&rand2,4);
@@ -666,156 +663,92 @@ void SA_Logic(struct xfrm_state *x)
 		x->tfc_alg_timer.expires +=  delay;
 		add_timer(&x->tfc_alg_timer);
 	}else {
-	for (i=0; i<batch_size; i++) {
+		for (i=0; i<batch_size; i++) {
 
-		if (x->dummy_route!=NULL) {
-			skb = dequeue(x);
-		}
-
-		if (skb) {
-			//switch (x->size_algorithm){
-			switch (size_algorithm){
-				case 0:	
-				case 1:	//CBR
-					pktlen = am_pktlen;
-					packet_transform_len(x, skb, pktlen);
-					break;
-
-				case 2:	//random size 
-					//between [min_pktlen,max_pktlen]
-					get_random_bytes(&rand1,4);
-					pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen+1) ;
-					packet_transform_len(x, skb, pktlen);
-					break;
-
-				case 3:	//random padding 
-					//between [0,rnd_pad]
-					get_random_bytes(&rand1,4);
-					padlen = rand1%(rnd_pad+1) ;
-					packet_transform_pad(x, skb, padlen);
-					break;
+			if (x->dummy_route!=NULL) {
+				skb = dequeue(x);
 			}
 
-			//send the packet
-			dst_output(skb);
+			if (skb) {
+				//switch (x->size_algorithm){
+				switch (size_algorithm){
+					case 0:	
+					case 1:	//CBR
+						pktlen = am_pktlen;
+						packet_transform_len(x, skb, pktlen);
+						break;
+
+					case 2:	//random size 
+						//between [min_pktlen,max_pktlen]
+						get_random_bytes(&rand1,4);
+						pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen+1) ;
+						packet_transform_len(x, skb, pktlen);
+						break;
+
+					case 3:	//random padding 
+						//between [0,rnd_pad]
+						get_random_bytes(&rand1,4);
+						padlen = rand1%(rnd_pad+1) ;
+						packet_transform_pad(x, skb, padlen);
+						break;
+				}
+
+				//send the packet
+				dst_output(skb);
 	
-		}
+			}
 		
-		//build dummies after sending the whole batch
-		if (dummy_sent) {
-			build_dummy_pkt(x);
+			//build dummies after sending the whole batch
+			if (dummy_sent) {
+				build_dummy_pkt(x);
+			}
 		}
-	}
 	
-	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
-	//switch (x->delay_algorithm){
-	switch (delay_algorithm){
-		case 0:	
-		case 1:	//CBR
-			delay = HZ / sa_hz;
-			break;
-
-		case 2:	//random IPD (inter-packet-delay)
-			//grometric in [0 ... 1/sa_hz sec]
-			get_random_bytes(&rand1,4);
-			delay = HZ / (1 + (rand1%modulo));
-			break;
-
-		case 3: //???
-			delay = HZ / (1 + (a%modulo));
-			a++;
-			if(a>=modulo) a = 0;
-			break;
-	}
+		//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
+		switch (delay_algorithm){
+			case 0:	
+			case 1:	//CBR
+				delay = HZ / sa_hz;
+				break;
 	
-	//printk(KERN_INFO "MAR SA_Logic:%u\n", sa_hz);
-	//init_timer(&x->tfc_alg_timer);
-	del_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.expires +=  delay;
-	add_timer(&x->tfc_alg_timer);
+			case 2:	//random IPD (inter-packet-delay)
+				//grometric in [0 ... 1/sa_hz sec]
+				get_random_bytes(&rand1,4);
+				delay = HZ / (1 + (rand1%modulo));
+				break;
+
+			case 3: //???
+				delay = HZ / (1 + (a%modulo));
+				a++;
+				if(a>=modulo) a = 0;
+				break;
+		}
+	
+		//printk(KERN_INFO "MAR SA_Logic:%u\n", sa_hz);
+		//init_timer(&x->tfc_alg_timer);
+		del_timer(&x->tfc_alg_timer);
+		x->tfc_alg_timer.expires +=  delay;
+		add_timer(&x->tfc_alg_timer);
+	}
 }
-}
+
 
 /**
-EspTfc_SA_init creates a chain of dst_entries for the flow that belongs to this SA and saves it in an appropriate structure. We do this in order to be able to send dummy pkts on this SA regardless of the presence of data pkts.
-We also initialize the tfc queue associated to the SA; this queue is used to reshape the traffic of the single SA; packets are inserted in the appropriate queue by the tfc_hook()
-
-KIRALY: generalize max_pkt_size to an Algorith_Manager specific state variable structure!
-
+tfc_apply 
 */
-void EspTfc_SA_init(struct xfrm_state *x)
+unsigned int tfc_apply(struct xfrm_state *x,struct sk_buff *skb)
 {
-	/*costruisco una struttura flowi in cui inserisco l'indirizzo sorgente e destinazione 
-	della SA, con cui andiamo a creare la catena di dst_entry e la salviamo in x->dummy_route
-	*/
-	//fabrizio - creo la rtable per questa SA..mi serve per poter instradare i pacchetti dummy
-	struct flowi fl = { .oif = 0,
-			    .nl_u = { .ip4_u =
-				      { .daddr = x->id.daddr.a4,
-					.saddr = x->props.saddr.a4,
-					.tos = 0} },
-			    .proto = IPPROTO_TFC,
-	};
-	int err;
-
-	//printk(KERN_INFO "FAB dummy_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
-
-	err = ip_route_output_key(&x->dummy_route, &fl);
-	if (err) {
-		//printk(KERN_INFO "FAB dummy_init - ip_route_output_key fallito!\n");
-		//cskiraly: set this to null to signal that other structures doesn't have to be destroyed at the end 
-		x->dummy_route = NULL;
-		return;
-	};
-	dst_hold(&x->dummy_route->u.dst);
-	//x->algorithm=algorithm;
-	//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
-	/*switch (x->algorithm){
-		//CBR
-		case 0:	break;
-		//Random
-		case 1: get_random_bytes(&rand1,4);
-			sa_hz = 1 + rand1%modulo;
-			break;
-		//Sawtooth
-		case 2: sa_hz = 1 + (a%modulo);
-			a++;
-			if(a>=modulo) a = 0;
-			break;
-		case 3: 
-			break;
-		case 4: 
-			break;
-		case 5: 
-			break;
-	}
-	*/
-	//Setto tfc apply a 1
-	x->tfc = tfc;
-	//inizializzo la coda tfc di controllo del traffico
-	skb_queue_head_init(&x->tfc_list);
-	//printk(KERN_INFO "MAR TFC_list init \n");
-	//inizializzo la coda dei dummy
-	skb_queue_head_init(&x->dummy_list);
-	//printk(KERN_INFO "MAR dummy_list init \n");
-	build_dummy_pkt(x);
-
-	//Inizializzo il timer di controllo dell'SA
-	init_timer(&x->tfc_alg_timer);
-	x->tfc_alg_timer.data = x;
-	x->tfc_alg_timer.function = SA_Logic;
-	//x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
-	x->tfc_alg_timer.expires = jiffies;
-	//add_timer(&x->tfc_alg_timer);
-	SA_Logic(x);
-	return;
-	
+    skb_queue_tail(&x->tfc_list,skb);
+    //printk(KERN_INFO "KIR skb_queue_len:%u\n", skb_queue_len(&x->tfc_list));
+    return NF_STOLEN;
 }
 
-EXPORT_SYMBOL(EspTfc_SA_init);
-EXPORT_SYMBOL(tfc_input);
-EXPORT_SYMBOL(tfc_defrag1);
 
+EXPORT_SYMBOL(build_dummy_pkt);
+EXPORT_SYMBOL(SA_Logic);
+EXPORT_SYMBOL(tfc_apply);
+EXPORT_SYMBOL(tfc_remove);
+EXPORT_SYMBOL(tfc_defrag);
 
 static int __init init(void)
 {

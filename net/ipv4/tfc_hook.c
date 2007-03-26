@@ -23,10 +23,72 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Fabrizio Formisano, Csaba Kiraly");
 MODULE_DESCRIPTION("TFC hook for outgoing packets");
 
+static int tfc_in_tunnel = 1;
+module_param(tfc_in_tunnel, int, 0644);
+MODULE_PARM_DESC(tfc_in_tunnel, "(default:1), whether to use TFC in tunnel mode or not");
+
+
 /* This is the structure we shall use to register our function */
 static struct nf_hook_ops nfho_forward;
 static struct nf_hook_ops nfho_local_out;
 struct timer_list	SAD_timer;
+
+
+/**
+EspTfc_SA_init creates a chain of dst_entries for the flow that belongs to this SA and saves 
+it in an appropriate structure. We do this in order to be able to send dummy pkts on this SA 
+regardless of the presence of data pkts.
+We also initialize the tfc queue associated to the SA; this queue is used to reshape the 
+traffic of the single SA; packets are inserted in the appropriate queue by the tfc_hook()
+*/
+void EspTfc_SA_init(struct xfrm_state *x)
+{
+	/*costruisco una struttura flowi in cui inserisco l'indirizzo sorgente e destinazione 
+	della SA, con cui andiamo a creare la catena di dst_entry e la salviamo in x->dummy_route
+	*/
+	//fabrizio - creo la rtable per questa SA..mi serve per poter instradare i pacchetti dummy
+	struct flowi fl = { .oif = 0,
+			    .nl_u = { .ip4_u =
+				      { .daddr = x->id.daddr.a4,
+					.saddr = x->props.saddr.a4,
+					.tos = 0} },
+			    .proto = IPPROTO_TFC,
+	};
+	int err;
+
+	//printk(KERN_INFO "FAB EspTfc_SA_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
+
+	err = ip_route_output_key(&x->dummy_route, &fl);
+	if (err) {
+		printk(KERN_INFO "FAB dummy_init - ip_route_output_key fallito!\n");
+		//cskiraly: set this to null to signal that other structures doesn't have to be destroyed at the end 
+		x->dummy_route = NULL;
+		return;
+	};
+	dst_hold(&x->dummy_route->u.dst);
+
+	//Setto tfc apply a 1
+	x->tfc = tfc_in_tunnel;
+	//inizializzo la coda tfc di controllo del traffico
+	skb_queue_head_init(&x->tfc_list);
+	//printk(KERN_INFO "MAR TFC_list init \n");
+	//inizializzo la coda dei dummy
+	skb_queue_head_init(&x->dummy_list);
+	//printk(KERN_INFO "MAR dummy_list init \n");
+	build_dummy_pkt(x);
+
+	//Inizializzo il timer di controllo dell'SA
+	init_timer(&x->tfc_alg_timer);
+	x->tfc_alg_timer.data = x;
+	x->tfc_alg_timer.function = SA_Logic;
+	//x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
+	x->tfc_alg_timer.expires = jiffies;
+	//add_timer(&x->tfc_alg_timer);
+	//printk(KERN_INFO "KIR call SA_Logic\n");
+	SA_Logic(x);
+	return;
+	
+}
 
 
 /**
@@ -138,10 +200,11 @@ unsigned int tfc_hook(unsigned int hooknum,
 		i++;
 //ESP->AH	if(x->id.proto == IPPROTO_ESP){
 		if(x->id.proto == TFC_ATTACH_PROTO){
-			//printk(KERN_INFO "FAB myhook - found ESP SA, enqueue pkt\n");
-			skb_queue_tail(&x->tfc_list,sb);
+			printk(KERN_INFO "FAB myhook - found SA, enqueue pkt\n");
+			return tfc_apply(x,sb);
+			//skb_queue_tail(&x->tfc_list,sb);
 			//printk(KERN_INFO "FAB myhook - pkt enqueued, qlen:%u\n", skb_queue_len(&x->tfc_list));
-			return NF_STOLEN;
+			//return NF_STOLEN;
 		}
 		dst = dst->child; //scorro la catena di dst_entry
 		x = dst->xfrm;
