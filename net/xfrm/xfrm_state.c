@@ -21,8 +21,6 @@
 #include <linux/ipsec.h>
 #include <linux/module.h>
 #include <asm/uaccess.h>
-//fabrizio
-#include <net/my_tfc.h>
 #include <net/route.h>
 /* Each xfrm_state may be linked to two tables:
 

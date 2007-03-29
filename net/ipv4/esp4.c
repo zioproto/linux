@@ -12,13 +12,9 @@
 #include <net/protocol.h>
 #include <net/udp.h>
 
-//fabrizio
-#include <net/myhook_files.h>
 
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
-{	//fabrizio
-	printk(KERN_INFO "FAB esp_output\n");
-	
+{	
 	int err;
 	struct iphdr *top_iph;
 	struct ip_esp_hdr *esph;
@@ -267,13 +263,6 @@ static int esp_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struc
 	skb->nh.raw += encap_len + sizeof(struct ip_esp_hdr) + esp->conf.ivlen;
 	memcpy(skb->nh.raw, workbuf, iph->ihl*4);
 	skb->nh.iph->tot_len = htons(skb->len);
-
-	/*fabrizio
-	rimuovo l'header tfc e il padding tfc
-	*/
-	
-        //if (nexthdr[1] == IPPROTO_TFC)
-	//	tfc_remove(skb);
 
 	return 0;
 
