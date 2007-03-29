@@ -28,13 +28,16 @@ MODULE_DESCRIPTION("myhook functions");
 static int header = 1;	//header or footer
 static int prot_id = 1;	//link in with protocol id or not
 
+
 static int dummy = 0;
 static int padding = 1;
 static int fragmentation = 0;
 static int multiplexing = 0;
 
+
 static int delay_algorithm = 1;
 static int sa_hz = 10;
+static int max_queue_len = 100;//if max_queue_len=0 then queue len is not limited
 
 static int batch_size = 1;
 static int picco = 0;
@@ -59,11 +62,14 @@ MODULE_PARM_DESC(header, "if 1 (default), tfc will use a heder; if 0, a footer")
 module_param(prot_id, bool, 0644);
 MODULE_PARM_DESC(prot_id, "if 1 (default), tfc will have its prot_id; if 0, it will be skipped (if used with header=false, it should provide some kinf of backward compatibility workaround");
 
+
 //packet delay parameters
 module_param(delay_algorithm, int , 0644);
 MODULE_PARM_DESC(delay_algorithm, "(default:1) algorithm type, default CBR");
 module_param(sa_hz, int , 0644);
 MODULE_PARM_DESC(sa_hz, "(default:1) packets per second");
+module_param(max_queue_len, int , 0644);
+MODULE_PARM_DESC(max_queue_len, "if 100 (default), tfc queue len is 100 pkt ; if 0, tfc queue len is not limited");
 
 //packet size parameters
 module_param(size_algorithm, int , 0644);
@@ -526,7 +532,7 @@ unsigned int tfc_remove(struct sk_buff *skb)
 	//skb->nh.raw += sizeof(struct ip_tfc_hdr);
 	//memcpy(skb->nh.raw, workbuf, iph->ihl*4);
 	
-	skb->nh.iph->tot_len = htons(skb->len);
+	skb->nh.iph->tot_len = htons(skb->len + ((void*)skb->data - (void*)skb->nh.iph));
 
 	printk(KERN_INFO "MAR - tfcrimosso iph-protocol: %d \n", skb->nh.iph->protocol);
 	
@@ -539,7 +545,7 @@ static void tfc_defrag2(struct sk_buff *skb)
 	struct sk_buff *skb_frag;
 	struct ip_frag_hdr *fragh, *fragh_new;
 	struct iphdr *iph_new;
-	int datalen = skb->len;
+	int datalen = skb->len + ((void*)skb->data - (void*)skb->nh.iph);
 	
 	//skb_reserve(skb, 20);
 	//skb_push(skb, 20);
@@ -557,18 +563,18 @@ static void tfc_defrag2(struct sk_buff *skb)
 		skb_frag = skb_dequeue(&tfc_defrag_list);
 		fragh_new = skb_frag->nh.raw + iph_new->ihl*4;
 		if((fragh_new->offset & 0x8000) == 0x8000){
-			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len + ((void*)skb_frag->data - (void*)skb_frag->nh.iph) - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
 		}else {
-			pskb_expand_head(skb, 0, skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr), GFP_ATOMIC);
-			skb_put(skb, skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
-			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+			pskb_expand_head(skb, 0, skb_frag->len + ((void*)skb_frag->data - (void*)skb_frag->nh.iph) - iph_new->ihl*4 - sizeof(struct ip_frag_hdr), GFP_ATOMIC);
+			skb_put(skb, skb_frag->len + ((void*)skb_frag->data - (void*)skb_frag->nh.iph) - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
+			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len + ((void*)skb_frag->data - (void*)skb_frag->nh.iph) - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
 		}
 	}
 	//printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
 	skb->h.raw = fragh;
-	ip_send_check(iph_new);
-	skb->nh.iph->tot_len = skb->len;
 	//ip_send_check(iph_new);
+	skb->nh.iph->tot_len = htons(skb->len + ((void*)skb->data - (void*)skb->nh.iph));
+	ip_send_check(iph_new);
 	return;
 	
 }
@@ -589,7 +595,7 @@ unsigned int tfc_defrag(struct sk_buff *sb){
  			
 	if ((fragh->offset & 0x8000) == 0x8000){ //Se M = 1
 		//printk(KERN_INFO "EMA no last fragment\n");
-		tfc_frag_len += sb->len - iph->ihl*4 - sizeof(struct ip_frag_hdr);
+		tfc_frag_len += sb->len + ((void*)sb->data - (void*)sb->nh.iph) - iph->ihl*4 - sizeof(struct ip_frag_hdr);
 	} else {
 		//printk(KERN_INFO "EMA last fragment\n");
 		tot_len += fragh->offset;
@@ -738,9 +744,14 @@ tfc_apply
 */
 unsigned int tfc_apply(struct xfrm_state *x,struct sk_buff *skb)
 {
-    skb_queue_tail(&x->tfc_list,skb);
+	if(max_queue_len != 0 && skb_queue_len(&x->tfc_list) >= max_queue_len){
+		return NF_DROP;
+	}
+	else{
+	skb_queue_tail(&x->tfc_list,skb);
     //printk(KERN_INFO "KIR skb_queue_len:%u\n", skb_queue_len(&x->tfc_list));
-    return NF_STOLEN;
+    	return NF_STOLEN;
+	}
 }
 
 
