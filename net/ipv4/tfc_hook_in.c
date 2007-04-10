@@ -62,7 +62,7 @@ unsigned int tfc_hook_in(unsigned int hooknum,
 
 static int __init init(void)
 {
-	printk(KERN_INFO "EMA myhook_in init\n");
+	printk(KERN_INFO "EMA tfc_hook_in init\n");
 	/* Fill in our hook structure */
     	nfho.hook = tfc_hook_in;         /* Handler function */
     	nfho.hooknum  = NF_IP_LOCAL_IN; /* First hook for IPv4 */
@@ -80,7 +80,7 @@ static int __init init(void)
 
 static void __exit fini(void)
 {	
-	printk(KERN_INFO "EMA myhook_in fini\n");
+	printk(KERN_INFO "EMA tfc_hook_in fini\n");
 	nf_unregister_hook(&nfho);
 }
 

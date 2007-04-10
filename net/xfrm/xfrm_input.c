@@ -65,6 +65,14 @@ int xfrm_parse_spi(struct sk_buff *skb, u8 nexthdr, u32 *spi, u32 *seq)
 		*spi = ntohl(ntohs(*(u16*)(skb->h.raw + 2)));
 		*seq = 0;
 		return 0;
+	case IPPROTO_TFC:
+		//we should return 0, otherwise XFRM4 receive thinks it can't handle the protocol and drops the packet 
+		if (!pskb_may_pull(skb, sizeof(struct ip_tfc_hdr)))
+			return -EINVAL;
+		//we do not use an spi ... will it work with 0? Or does it need a value to find an instance?
+		*spi = 0;
+		*seq = 0;
+		return 0;
 	default:
 		return 1;
 	}

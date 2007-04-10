@@ -41,8 +41,10 @@ regardless of the presence of data pkts.
 We also initialize the tfc queue associated to the SA; this queue is used to reshape the 
 traffic of the single SA; packets are inserted in the appropriate queue by the tfc_hook()
 */
-void EspTfc_SA_init(struct xfrm_state *x)
+void tfc_SA_init(struct xfrm_state *x)
 {
+	//TODO: check is tunnel or transport.
+    
 	/*costruisco una struttura flowi in cui inserisco l'indirizzo sorgente e destinazione 
 	della SA, con cui andiamo a creare la catena di dst_entry e la salviamo in x->dummy_route
 	*/
@@ -56,7 +58,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	};
 	int err;
 
-	//printk(KERN_INFO "FAB EspTfc_SA_init, SPI: %x, PROTO: %d, MODE: %u, hESP-len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
+	printk(KERN_INFO "KCS tfc_SA_init, SPI: %x, PROTO: %d, MODE: %u, header_len: %u\n",x->id.spi, x->id.proto, x->props.mode, x->props.header_len);
 
 	err = ip_route_output_key(&x->dummy_route, &fl);
 	if (err) {
@@ -90,6 +92,23 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	
 }
 
+/**
+we use the callback function defined in net/xfrm.h to find the SAs:
+extern int xfrm_state_walk(u8 proto, int (*func)(struct xfrm_state *, int, void*), void *);
+inputs: 
+    x: xfrm_state (walk will go through all the states with given protocol one after another)
+    count: we don't need it
+    ptr: parameters pass-through from walk. we don't need it
+returns:
+    0: it seems 0 is for OK.
+*/
+static int tfc_SA_init_cb(struct xfrm_state *x, int count, void *ptr){
+    // init TFC if it wasn't yet initialized (we use dummy_route to see if it was alrady initialized or not)
+    if (x->dummy_route == NULL){ 
+	tfc_SA_init(x);
+    }
+    return 0;
+}
 
 /**
 SAD_check viene fatta partire da init e periodicamente controlla il SAD, per 
@@ -97,76 +116,27 @@ inizializzare le funzioni di TFC per ogni nuova SA ESP eventualmente inserita
 */
 void SAD_check(void)
 {
-	struct list_head *state_list;
-	struct xfrm_state_afinfo *afinfo;
-	int i;
-	struct xfrm_state *x;
 
-	//printk(KERN_INFO "FAB SAD_check\n");
-	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
-	xfrm_state_get_afinfo*/
-	afinfo = xfrm_state_get_afinfo(AF_INET);
-	state_list = afinfo->state_bydst;
+	xfrm_state_walk(TFC_ATTACH_PROTO, tfc_SA_init_cb, NULL);
 
-	//spin_lock_bh(&xfrm_state_lock);
-		
-	/*we use afinfo to access the list of SAs. Afinfo has two pointers to the head of two 
-	different lists, one by address and one by SPI; we can indifferently use both of them to go 
-	through all the SAs. In reality xfrm uses not a single list, but an array of lists of 
-	XFRM_DST_HSIZE elements, and SA are inserted in a list according to their hash value.
-	We search through all the SAs inserted in the SAD, and, for all ESP SAs found, */
-
-	for (i = 0; i < XFRM_DST_HSIZE; i++) {
-//		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
-		list_for_each_entry(x, state_list+i, bydst) {
-//			printk(KERN_INFO "FAB myhook init - entry:%d\n",x->id.proto);
-//ESP->AH			if ((x->id.proto == IPPROTO_ESP)&&(x->dummy_route == NULL)) {
-				if ((x->id.proto == TFC_ATTACH_PROTO)&&(x->dummy_route == NULL)) {
-					//inizializzo le funzioni di TFC per la nuova SA
-					EspTfc_SA_init(x);
-				}
-
-		}
-	}
-	
-	//ogni 15 secondi controllo nuovamente il SAD
+	//each 15 seconds we look for new SAs in the SAD
+	//TODO: change this to callback
 	del_timer(&SAD_timer);
 	SAD_timer.expires = jiffies + HZ*15;
 	add_timer(&SAD_timer);
 }
 
+static int del_alg_timers_cb(struct xfrm_state *x, int count, void *ptr){
+    if (x->dummy_route != NULL){ 
+	del_timer(&x->tfc_alg_timer);
+	x->tfc = 0;
+    }
+    return 0;
+}
+
 void del_alg_timers(void)
 {
-	struct list_head *state_list;
-	struct xfrm_state_afinfo *afinfo;
-	int i;
-	struct xfrm_state *x;
-
-	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
-	xfrm_state_get_afinfo*/
-	afinfo = xfrm_state_get_afinfo(AF_INET);
-	state_list = afinfo->state_bydst;
-
-	//spin_lock_bh(&xfrm_state_lock);
-		
-	/*we use afinfo to access the list of SAs. Afinfo has two pointers to the head of two 
-	different lists, one by address and one by SPI; we can indifferently use both of them to go 
-	through all the SAs. In reality xfrm uses not a single list, but an array of lists of 
-	XFRM_DST_HSIZE elements, and SA are inserted in a list according to their hash value.
-	We search through all the SAs inserted in the SAD, and, for all ESP SAs found, */
-
-	for (i = 0; i < XFRM_DST_HSIZE; i++) {
-//		printk(KERN_INFO "FAB myhook init - i:%d\n",i);
-		list_for_each_entry(x, state_list+i, bydst) {
-//			printk(KERN_INFO "FAB myhook init - entry:%d\n",x->id.proto);
-				if ((x->id.proto == TFC_ATTACH_PROTO)&&(x->dummy_route != NULL)) {
-					//delete alg timer
-					del_timer(&x->tfc_alg_timer);
-					x->tfc = 0;
-				}
-
-		}
-	}
+	xfrm_state_walk(TFC_ATTACH_PROTO, del_alg_timers_cb, NULL);
 }
 
 /* This is the hook function itself.

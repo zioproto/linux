@@ -161,6 +161,17 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 			goto out;
 		break;
 
+	case IPPROTO_TFC:
+		// we do not need any of these algorythms
+		// TODO: add our own algorithms here
+		if (xfrma[XFRMA_ALG_COMP-1]	||
+		    xfrma[XFRMA_ALG_AUTH-1]	||
+		    xfrma[XFRMA_ALG_CRYPT-1]) {
+			printk("KCS: xfrm_user: verify_newsa_info failed\n");
+			goto out;
+		}
+		break;
+
 	default:
 		goto out;
 	};
@@ -548,6 +559,15 @@ static int verify_userspi_info(struct xfrm_userspi_info *p)
 		if (p->max >= 0x10000)
 			return -EINVAL;
 		break;
+
+	case IPPROTO_TFC:
+		/* TFC spi is 0 */
+		if (p->max != 0) {
+			printk("KCS: xfrm_user: verify_userspi_info failed\n");
+			return -EINVAL;
+		}
+		break;
+		
 
 	default:
 		return -EINVAL;

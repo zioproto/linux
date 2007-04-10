@@ -40,15 +40,12 @@ static DEFINE_SPINLOCK(xfrm_state_lock);
 static struct list_head xfrm_state_bydst[XFRM_DST_HSIZE];
 static struct list_head xfrm_state_byspi[XFRM_DST_HSIZE];
 
-//extern struct timer_list	TFC_control;
-
 DECLARE_WAIT_QUEUE_HEAD(km_waitq);
 EXPORT_SYMBOL(km_waitq);
 
 static DEFINE_RWLOCK(xfrm_state_afinfo_lock);
 
-//fabrizio....commentato per renderla pubblica
-/*static*/ struct xfrm_state_afinfo *xfrm_state_afinfo[NPROTO];
+static struct xfrm_state_afinfo *xfrm_state_afinfo[NPROTO];
 
 static struct work_struct xfrm_state_gc_work;
 static struct list_head xfrm_state_gc_list = LIST_HEAD_INIT(xfrm_state_gc_list);
@@ -456,17 +453,11 @@ static void __xfrm_state_insert(struct xfrm_state *x)
 	if (!mod_timer(&x->timer, jiffies + HZ))
 		xfrm_state_hold(x);
 
-	//fabrizio
-	/*if (x->id.proto == IPPROTO_ESP)
-		dummy_init(x);*/
-
 	wake_up(&km_waitq);
 }
 
 void xfrm_state_insert(struct xfrm_state *x)
-{	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_insert\n");
-	
+{
 	spin_lock_bh(&xfrm_state_lock);
 	__xfrm_state_insert(x);
 	spin_unlock_bh(&xfrm_state_lock);
@@ -479,9 +470,6 @@ static struct xfrm_state *__xfrm_find_acq_byseq(u32 seq);
 
 int xfrm_state_add(struct xfrm_state *x)
 {	
-	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_add\n");
-
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int family;
@@ -535,9 +523,7 @@ out:
 EXPORT_SYMBOL(xfrm_state_add);
 
 int xfrm_state_update(struct xfrm_state *x)
-{	//fabrizio
-	printk(KERN_INFO "FAB xfrm_state_update\n");
-
+{
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int err;
@@ -1048,8 +1034,6 @@ static struct xfrm_state_afinfo *xfrm_state_get_afinfo(unsigned short family)
 	read_unlock(&xfrm_state_afinfo_lock);
 	return afinfo;
 }
-//fabrizio ....aggiunto per rendere pubblica la funzione
-EXPORT_SYMBOL(xfrm_state_get_afinfo);
 
 static void xfrm_state_put_afinfo(struct xfrm_state_afinfo *afinfo)
 {
