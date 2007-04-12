@@ -134,7 +134,7 @@ void get_thread_regs(union uml_pt_regs *uml_regs, void *buffer)
 {
 	struct __jmp_buf_tag *jmpbuf = buffer;
 
-	//UPT_SET(uml_regs, EIP, jmpbuf->__jmpbuf[JB_PC]);
-	//UPT_SET(uml_regs, UESP, jmpbuf->__jmpbuf[JB_SP]);
-	//UPT_SET(uml_regs, EBP, jmpbuf->__jmpbuf[JB_BP]);
+	UPT_SET(uml_regs, EIP, jmpbuf->__jmpbuf[JB_PC]);
+	UPT_SET(uml_regs, UESP, jmpbuf->__jmpbuf[JB_SP]);
+	UPT_SET(uml_regs, EBP, jmpbuf->__jmpbuf[JB_BP]);
 }

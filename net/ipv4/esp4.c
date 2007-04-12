@@ -12,9 +12,8 @@
 #include <net/protocol.h>
 #include <net/udp.h>
 
-
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
-{	
+{
 	int err;
 	struct iphdr *top_iph;
 	struct ip_esp_hdr *esph;
@@ -59,13 +58,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	top_iph = skb->nh.iph;
 	esph = (struct ip_esp_hdr *)(skb->nh.raw + top_iph->ihl*4);
 	top_iph->tot_len = htons(skb->len + alen);
-
-	/*fabrizio - il next header di ESP sarà TFC se viene inserito il padding tfc*/
-	//if((x->id.proto == IPPROTO_ESP)&&(skb->nh.iph->protocol != 59) && WITH_TFC){
-	//	*(u8*)(trailer->tail - 1) = IPPROTO_TFC;
-	//}else{
-		*(u8*)(trailer->tail - 1) = top_iph->protocol;
-	//}
+	*(u8*)(trailer->tail - 1) = top_iph->protocol;
 
 	/* this is non-NULL only with UDP Encapsulation */
 	if (x->encap) {
@@ -133,7 +126,6 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 error:
 	return err;
 }
-
 
 /*
  * Note: detecting truncated vs. non-truncated authentication data is very
@@ -254,8 +246,6 @@ static int esp_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struc
 			skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
 
-
-	
 	iph->protocol = nexthdr[1];
 	pskb_trim(skb, skb->len - alen - padlen - 2);
 	memcpy(workbuf, skb->nh.raw, iph->ihl*4);
@@ -269,9 +259,6 @@ static int esp_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struc
 out:
 	return -EINVAL;
 }
-
-
-
 
 static u32 esp4_get_max_size(struct xfrm_state *x, int mtu)
 {

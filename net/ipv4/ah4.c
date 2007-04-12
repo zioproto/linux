@@ -9,9 +9,6 @@
 #include <net/protocol.h>
 #include <asm/scatterlist.h>
 
-//cskiraly
-//#include <net/myhook_files.h>
-
 
 /* Clear mutable options and find final destination to substitute
  * into IP header for icv calculation. Options are already checked
@@ -118,8 +115,6 @@ error:
 	return err;
 }
 
-
-
 static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct sk_buff *skb)
 {
 	int ah_hlen;
@@ -127,7 +122,7 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	struct ip_auth_hdr *ah;
 	struct ah_data *ahp;
 	char work_buf[60];
-	//printk(KERN_INFO "MAR ah4_input called \n");
+
 	if (!pskb_may_pull(skb, sizeof(struct ip_auth_hdr)))
 		goto out;
 
@@ -181,7 +176,7 @@ static int ah_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struct
 	skb->nh.iph->tot_len = htons(skb->len);
 	skb_pull(skb, skb->nh.iph->ihl*4);
 	skb->h.raw = skb->data;
-	printk(KERN_INFO "MAR ah4_input - ip protocol: %d \n", skb->nh.iph->protocol);
+
 	return 0;
 
 out:

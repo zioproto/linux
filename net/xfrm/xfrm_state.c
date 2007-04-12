@@ -13,15 +13,13 @@
  *
  */
 
-
-
 #include <linux/workqueue.h>
 #include <net/xfrm.h>
 #include <linux/pfkeyv2.h>
 #include <linux/ipsec.h>
 #include <linux/module.h>
 #include <asm/uaccess.h>
-#include <net/route.h>
+
 /* Each xfrm_state may be linked to two tables:
 
    1. Hash table by (spi,daddr,ah/esp) to find SA by SPI. (input,ctl)
@@ -44,7 +42,6 @@ DECLARE_WAIT_QUEUE_HEAD(km_waitq);
 EXPORT_SYMBOL(km_waitq);
 
 static DEFINE_RWLOCK(xfrm_state_afinfo_lock);
-
 static struct xfrm_state_afinfo *xfrm_state_afinfo[NPROTO];
 
 static struct work_struct xfrm_state_gc_work;
@@ -217,6 +214,9 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 
 static int __xfrm_state_delete(struct xfrm_state *x)
 {
+	int err = -ESRCH;
+
+	// TFC part
 	del_timer(&x->tfc_alg_timer);
 	printk(KERN_INFO "MAR xfrm_state_delete: delete tfc_alg_timer\n");
 	//cskiraly: first chech whether the structures were initialized!
@@ -240,7 +240,7 @@ static int __xfrm_state_delete(struct xfrm_state *x)
 			printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
 		}
 	}
-	int err = -ESRCH;
+	// end of TFC part
 
 	if (x->km.state != XFRM_STATE_DEAD) {
 		x->km.state = XFRM_STATE_DEAD;
@@ -292,6 +292,7 @@ void xfrm_state_flush(u8 proto)
 {
 	int i;
 	struct xfrm_state *x;
+
 	spin_lock_bh(&xfrm_state_lock);
 	for (i = 0; i < XFRM_DST_HSIZE; i++) {
 restart:
@@ -311,8 +312,6 @@ restart:
 	}
 	spin_unlock_bh(&xfrm_state_lock);
 	wake_up(&km_waitq);
-	
-	
 }
 EXPORT_SYMBOL(xfrm_state_flush);
 
@@ -439,9 +438,9 @@ out:
 }
 
 static void __xfrm_state_insert(struct xfrm_state *x)
-{	
+{
 	unsigned h = xfrm_dst_hash(&x->id.daddr, x->props.family);
-	
+
 	list_add(&x->bydst, xfrm_state_bydst+h);
 	xfrm_state_hold(x);
 
@@ -469,7 +468,7 @@ EXPORT_SYMBOL(xfrm_state_insert);
 static struct xfrm_state *__xfrm_find_acq_byseq(u32 seq);
 
 int xfrm_state_add(struct xfrm_state *x)
-{	
+{
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int family;
