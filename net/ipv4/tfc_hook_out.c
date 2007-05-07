@@ -43,14 +43,15 @@ traffic of the single SA; packets are inserted in the appropriate queue by the t
 */
 void EspTfc_SA_init(struct xfrm_state *x)
 {
+	printk(KERN_INFO "EspTfc_SA_init\n"); 
 	/*costruisco una struttura flowi in cui inserisco l'indirizzo sorgente e destinazione 
 	della SA, con cui andiamo a creare la catena di dst_entry e la salviamo in x->dummy_route
 	*/
 	//fabrizio - creo la rtable per questa SA..mi serve per poter instradare i pacchetti dummy
 	struct flowi fl = { .oif = 0,
 			    .nl_u = { .ip4_u =
-				      { .daddr = x->id.daddr.a4,
-					.saddr = x->props.saddr.a4,
+				      { .daddr = x->tfc_param.daddr_dummy,
+					.saddr = x->tfc_param.saddr_dummy,
 					.tos = 0} },
 			    .proto = IPPROTO_TFC,
 	};
@@ -80,7 +81,7 @@ void EspTfc_SA_init(struct xfrm_state *x)
 	//Inizializzo il timer di controllo dell'SA
 	init_timer(&x->tfc_alg_timer);
 	x->tfc_alg_timer.data = x;
-	x->tfc_alg_timer.function = SA_Logic;
+	x->tfc_alg_timer.function = (void*) SA_Logic;
 	//x->tfc_alg_timer.expires = jiffies + HZ/sa_hz;
 	x->tfc_alg_timer.expires = jiffies;
 	//add_timer(&x->tfc_alg_timer);
@@ -102,7 +103,7 @@ void SAD_check(void)
 	int i;
 	struct xfrm_state *x;
 
-	//printk(KERN_INFO "FAB SAD_check\n");
+	printk(KERN_INFO "SAD_check\n");
 	/*posso avere accesso alla lista del SAD solo perchè ho reso pubblica la funzione 
 	xfrm_state_get_afinfo*/
 	afinfo = xfrm_state_get_afinfo(AF_INET);
@@ -224,7 +225,7 @@ static int __init init(void)
 {
 	
 
-//printk(KERN_INFO "FAB myhook init\n");
+	printk(KERN_INFO "FAB myhook init\n");
 /* Fill in our hook structure */
         nfho_forward.hook = tfc_hook;         /* Handler function */
         nfho_forward.hooknum  = NF_IP_FORWARD; /* First hook for IPv4 */
@@ -242,7 +243,7 @@ static int __init init(void)
 	
 	// start timer to periodically look for new Security Associations
 	init_timer(&SAD_timer);
-	SAD_timer.function = SAD_check;
+	SAD_timer.function = (void*) SAD_check;
 	//SAD_timer.expires = jiffies + HZ*15;
 	//add_timer(&SAD_timer);
 	SAD_check();

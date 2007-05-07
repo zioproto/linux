@@ -17,6 +17,7 @@
 #include <net/route.h>
 #include <net/ipv6.h>
 #include <net/ip6_fib.h>
+//#include <net/tfc.h>
 
 #define XFRM_ALIGN8(len)	(((len) + 7) & ~7)
 
@@ -157,8 +158,10 @@ struct xfrm_state
 	struct rtable		*dummy_route;
 	struct sk_buff_head	tfc_list;
 	struct sk_buff_head	dummy_list;
-	int algorithm;
-	int tfc;
+// 	__u8 			algorithm;
+	__u8 			tfc;
+// 	__u8			header;
+	struct tfcparameters	tfc_param;
 };
 
 enum {

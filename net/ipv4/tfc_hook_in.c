@@ -44,7 +44,7 @@ unsigned int tfc_hook_in(unsigned int hooknum,
                        int (*okfn)(struct sk_buff *))
 {
 	struct sk_buff *sb = *skb;
-	struct iphdr *iph = sb->nh.raw;
+//	struct iphdr *iph = sb->nh.raw;
 
 	if (sb->nh.iph->protocol == IPPROTO_TFC){
 		//printk(KERN_INFO "EMA protocol ip : %d \n", sb->nh.iph->protocol);

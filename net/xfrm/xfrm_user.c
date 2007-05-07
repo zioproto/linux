@@ -279,12 +279,15 @@ static void copy_from_user_state(struct xfrm_state *x, struct xfrm_usersa_info *
 	memcpy(&x->id, &p->id, sizeof(x->id));
 	memcpy(&x->sel, &p->sel, sizeof(x->sel));
 	memcpy(&x->lft, &p->lft, sizeof(x->lft));
+	memcpy(&x->tfc_param, &p->tfc_param, sizeof(x->tfc_param));
 	x->props.mode = p->mode;
 	x->props.replay_window = p->replay_window;
 	x->props.reqid = p->reqid;
 	x->props.family = p->family;
 	x->props.saddr = p->saddr;
 	x->props.flags = p->flags;
+// 	x->header = p->header;
+// 	x->algorithm = p->algorithm;
 }
 
 static struct xfrm_state *xfrm_state_construct(struct xfrm_usersa_info *p,

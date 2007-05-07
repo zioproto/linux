@@ -40,7 +40,7 @@ static int sa_hz = 10;
 static int max_queue_len = 100;//if max_queue_len=0 then queue len is not limited
 
 static int batch_size = 1;
-static int picco = 0;
+//static int picco = 0;
 
 static int size_algorithm = 1;
 static int am_pktlen = 1300;
@@ -187,10 +187,11 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 	struct ip_tfc_hdr *tfch;
 	struct dst_entry *dst = skb->dst;
 	struct xfrm_state *x = dst->xfrm;
-	
-	if (header) {
+	printk(KERN_INFO "EMA header = %d\n",x->tfc_param.header);
+	if (x->tfc_param.header) {
 		if (!x->props.mode){
 			//In Transport mode
+			printk(KERN_INFO "Transport mode\n");
 			iph = skb->nh.iph;
 			skb->h.ipiph = iph;
 			pskb_expand_head(skb,sizeof(struct ip_tfc_hdr),0,GFP_ATOMIC);
@@ -224,15 +225,15 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 	}
 
 	//link in TFC in the protocol "stack"
-	if (prot_id) {
+	if (x->tfc_param.prot_id) {
 		if (!x->props.mode){
 			//In Transport mode
 			//link in TFC in the protocol "stack"
 			tfch->nexthdr = skb->nh.iph->protocol;		//nexthdr=protocol originario
 			skb->nh.iph->protocol = IPPROTO_TFC;
-			if (am_pktlen > 1456)
+			if (x->tfc_param.am_pktlen > 1456)
 			skb->nh.iph->frag_off = 0x0000;
-			//printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
+			printk(KERN_INFO "MAR tfch->nexthdr: %d, iph->protocol:%d\n", tfch->nexthdr, skb->nh.iph->protocol);
 		} 
 		else {  
 			//In Tunnel
@@ -244,7 +245,7 @@ void tfch_insert(struct sk_buff *skb, int payloadsize)
 	//tfch->padsize = htons(padsize);
 	tfch->payloadsize = (u_int16_t) payloadsize;
 	//skb_put(skb, tfch->padsize);		    //padding inserito dopo payload
-
+	printk(KERN_INFO "EMA tfc insert\n");
 	return;
 }
 
@@ -263,6 +264,7 @@ struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 	struct iphdr *iph;
 	struct ip_frag_hdr *fragh, *fragh_new;
 	printk(KERN_INFO "MAR tfc_fragment called\n");
+	fragh = NULL;
 	if (!x->props.mode){
 		iph = skb->nh.iph;
 		if(skb->nh.iph->protocol != NEXTHDR_FRAGMENT_TFC){
@@ -352,7 +354,7 @@ struct sk_buff* tfc_fragment(struct sk_buff *skb, int size)
 			//Inserisco l'header di frammentazione
 			fragh_state = 1;
 			pskb_expand_head(skb,0,sizeof(struct ip_frag_hdr),GFP_ATOMIC);
-			fragh = skb_push(skb,sizeof(struct ip_frag_hdr));
+			fragh = (struct ip_frag_hdr*)skb_push(skb,sizeof(struct ip_frag_hdr));
 			fragh->nexthdr = IPPROTO_IPIP;
 		}
 
@@ -429,7 +431,7 @@ struct sk_buff* dequeue(struct xfrm_state *x)
 		//if there is a packet in the queue, take it
 		dummy_sent = 0;
 		return skb_dequeue(&x->tfc_list);	
-	} else if (dummy && !x->props.mode) {
+	} else if (x->tfc_param.dummy && !x->props.mode) {
 		//otherwise take a dummy if dummy packets are enabled
 		//TODO: not working for tunnel at the moment
 		dummy_sent = 1;
@@ -463,13 +465,13 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 	//If there is space and there are more packets in the queue, we insert the header, and go on with the next one ...
 
 	//if padding needed	
-	if (padding && padding_needed > 0) {
+	if (x->tfc_param.padding && padding_needed > 0) {
 		//pad
 		payload_size = orig_size;
 		padding_insert(skb, padding_needed);
 	}
 	//else if fragmentation needed
-	else if (fragmentation && padding_needed < 0) {
+	else if (x->tfc_param.fragmentation && padding_needed < 0) {
 		//fragment
 		payload_size = orig_size + padding_needed - sizeof(struct ip_frag_hdr);
 		skb_remainder = tfc_fragment(skb, payload_size);
@@ -482,7 +484,7 @@ void packet_transform_len(struct xfrm_state *x, struct sk_buff *skb, int pkt_siz
 	}	
         //add header
         //tfch_insert(skb,orig_size);
-        if (padding || fragmentation || multiplexing) {
+        if (x->tfc_param.padding || x->tfc_param.fragmentation || x->tfc_param.multiplexing) {
     		tfch_insert(skb,payload_size);
     	}
 }
@@ -494,12 +496,12 @@ void packet_transform_pad(struct xfrm_state *x, struct sk_buff *skb, int pad_siz
 	//calculate the size of the payload: unfortunately the skb already contains the ip header (or the pseudo header?), so we need to subtract its length
 	orig_size = skb->len - skb->nh.iph->ihl*4;
 
-	if (padding) {
+	if (x->tfc_param.padding) {
 		//pad
 		padding_insert(skb, pad_size);
 	}
 
-        if (padding || fragmentation || multiplexing) {
+        if (x->tfc_param.padding || x->tfc_param.fragmentation || x->tfc_param.multiplexing) {
     		tfch_insert(skb,orig_size);
     	}
 }
@@ -551,8 +553,8 @@ static void tfc_defrag2(struct sk_buff *skb)
 	//skb_push(skb, 20);
 	//skb_put(skb, tot_len); 
 	//skb->nh.raw = (void*) skb->data;
-	iph_new = skb->nh.iph;
-	fragh = skb->nh.raw + iph_new->ihl*4;
+	iph_new = (struct iphdr*)skb->nh.iph;
+	fragh = (struct ip_frag_hdr*) (skb->nh.raw + iph_new->ihl*4);
 	iph_new->protocol = fragh->nexthdr;
 	pskb_expand_head(skb, 0, tfc_frag_len - sizeof(struct ip_frag_hdr), GFP_ATOMIC);
 	skb_put(skb, tfc_frag_len - sizeof(struct ip_frag_hdr));
@@ -560,8 +562,8 @@ static void tfc_defrag2(struct sk_buff *skb)
 	
 	//printk(KERN_INFO "EMA prima del while \n");
 	while (!skb_queue_empty(&tfc_defrag_list)){
-		skb_frag = skb_dequeue(&tfc_defrag_list);
-		fragh_new = skb_frag->nh.raw + iph_new->ihl*4;
+		skb_frag = (struct sk_buff*)skb_dequeue(&tfc_defrag_list);
+		fragh_new = (struct ip_frag_hdr*) (skb_frag->nh.raw + iph_new->ihl*4);
 		if((fragh_new->offset & 0x8000) == 0x8000){
 			memmove(skb->data + iph_new->ihl*4 + (fragh_new->offset & 0x7fff), skb_frag->data + iph_new->ihl*4 + sizeof(struct ip_frag_hdr), skb_frag->len + ((void*)skb_frag->data - (void*)skb_frag->nh.iph) - iph_new->ihl*4 - sizeof(struct ip_frag_hdr));
 		}else {
@@ -571,7 +573,7 @@ static void tfc_defrag2(struct sk_buff *skb)
 		}
 	}
 	//printk(KERN_INFO "EMA defragment accomplishied. OLE \n");
-	skb->h.raw = fragh;
+	skb->h.raw = (void*)fragh;
 	//ip_send_check(iph_new);
 	skb->nh.iph->tot_len = htons(skb->len + ((void*)skb->data - (void*)skb->nh.iph));
 	ip_send_check(iph_new);
@@ -587,8 +589,8 @@ unsigned int tfc_defrag(struct sk_buff *sb){
 	struct iphdr *iph;
 	struct ip_tfc_hdr *tfch;
 
-	tfch = (void*) sb->h.raw;
-	iph = sb->nh.raw;
+	tfch = (struct ip_tfc_hdr*) sb->h.raw;
+	iph = (struct iphdr*) sb->nh.raw;
 
 	//printk(KERN_INFO "EMA fragment received \n");
 	fragh = (void*) sb->h.raw;
@@ -637,23 +639,23 @@ void SA_Logic(struct xfrm_state *x)
 	int modulo = 3;
 	int pktlen;
 	int padlen;
-	unsigned long delay;
+	unsigned long delay = 0;
 	int i;
 	
-	//printk(KERN_INFO "KIR SA_Logic\n");
+// 	printk(KERN_INFO "SA_Logic\n");
 	
-	if (picco == 1){
+	if (x->tfc_param.picco == 1){
 		unsigned long	rand2;
 		get_random_bytes(&rand2,4);
 		int pick;
 		pick = (int)rand2 % 20;
 		unsigned long	rand3;
 		get_random_bytes(&rand3,4);
-		batch_size = (int)rand2 % 20;
+		x->tfc_param.batch_size = (int)rand2 % 20;
 		int count1;
 		int count2;
 		for(count1=0; count1<pick;count1++){
-			for (count2=0; count2<batch_size; count2++) {
+			for (count2=0; count2<x->tfc_param.batch_size; count2++) {
         			if (x->dummy_route!=NULL) {
 					skb = dequeue(x);
 					if (skb)
@@ -669,7 +671,7 @@ void SA_Logic(struct xfrm_state *x)
 		x->tfc_alg_timer.expires +=  delay;
 		add_timer(&x->tfc_alg_timer);
 	}else {
-		for (i=0; i<batch_size; i++) {
+		for (i=0; i<x->tfc_param.batch_size; i++) {
 
 			if (x->dummy_route!=NULL) {
 				skb = dequeue(x);
@@ -677,24 +679,24 @@ void SA_Logic(struct xfrm_state *x)
 
 			if (skb) {
 				//switch (x->size_algorithm){
-				switch (size_algorithm){
+				switch (x->tfc_param.size_algorithm){
 					case 0:	
 					case 1:	//CBR
-						pktlen = am_pktlen;
+						pktlen = x->tfc_param.am_pktlen;
 						packet_transform_len(x, skb, pktlen);
 						break;
 
 					case 2:	//random size 
 						//between [min_pktlen,max_pktlen]
 						get_random_bytes(&rand1,4);
-						pktlen = min_pktlen + rand1%(max_pktlen-min_pktlen+1) ;
+						pktlen = x->tfc_param.min_pktlen + rand1%(x->tfc_param.max_pktlen-x->tfc_param.min_pktlen+1) ;
 						packet_transform_len(x, skb, pktlen);
 						break;
 
 					case 3:	//random padding 
 						//between [0,rnd_pad]
 						get_random_bytes(&rand1,4);
-						padlen = rand1%(rnd_pad+1) ;
+						padlen = rand1%(x->tfc_param.rnd_pad+1) ;
 						packet_transform_pad(x, skb, padlen);
 						break;
 				}
@@ -711,10 +713,11 @@ void SA_Logic(struct xfrm_state *x)
 		}
 	
 		//Calcolo il # di pkt che devo inviare con l'algoritmo relativo alla SA
-		switch (delay_algorithm){
+		//printk(KERN_INFO "EMA algorithm = %d\n",x->tfc_param.delay_algorithm);
+		switch (x->tfc_param.delay_algorithm){
 			case 0:	
 			case 1:	//CBR
-				delay = HZ / sa_hz;
+				delay = HZ / x->tfc_param.sa_hz;
 				break;
 	
 			case 2:	//random IPD (inter-packet-delay)
@@ -744,12 +747,13 @@ tfc_apply
 */
 unsigned int tfc_apply(struct xfrm_state *x,struct sk_buff *skb)
 {
-	if(max_queue_len != 0 && skb_queue_len(&x->tfc_list) >= max_queue_len){
+	if(x->tfc_param.max_queue_len != 0 && skb_queue_len(&x->tfc_list) >= x->tfc_param.max_queue_len){
+		printk(KERN_INFO "tfc apply: Dropped\n");
 		return NF_DROP;
 	}
 	else{
 	skb_queue_tail(&x->tfc_list,skb);
-    //printk(KERN_INFO "KIR skb_queue_len:%u\n", skb_queue_len(&x->tfc_list));
+        printk(KERN_INFO "tfc apply: Stolen\n");
     	return NF_STOLEN;
 	}
 }
