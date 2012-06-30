@@ -177,6 +177,18 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 			goto out;
 		break;
 
+	case IPPROTO_TFC:
+		// we do not need any of these algorythms
+		// TODO: add our own algorithms here
+		if (xfrma[XFRMA_ALG_COMP-1]	||
+		    xfrma[XFRMA_ALG_AUTH-1]	||
+		    xfrma[XFRMA_ALG_CRYPT-1]) {
+			printk("KCS: xfrm_user: verify_newsa_info failed\n");
+			err = 0;
+			goto out;
+		}
+		break;
+
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case IPPROTO_DSTOPTS:
 	case IPPROTO_ROUTING:
@@ -316,6 +328,7 @@ static void copy_from_user_state(struct xfrm_state *x, struct xfrm_usersa_info *
 	memcpy(&x->id, &p->id, sizeof(x->id));
 	memcpy(&x->sel, &p->sel, sizeof(x->sel));
 	memcpy(&x->lft, &p->lft, sizeof(x->lft));
+	memcpy(&x->tfc_param, &p->tfc_param, sizeof(x->tfc_param)); //KCS: TODO: verify that this copy is needed
 	x->props.mode = p->mode;
 	x->props.replay_window = p->replay_window;
 	x->props.reqid = p->reqid;
@@ -821,6 +834,14 @@ static int verify_userspi_info(struct xfrm_userspi_info *p)
 		/* IPCOMP spi is 16-bits. */
 		if (p->max >= 0x10000)
 			return -EINVAL;
+		break;
+	
+	case IPPROTO_TFC:
+		/* TFC spi is 0 */	//KCS: is this still true???
+		if (p->max != 0) {
+			printk("KCS: xfrm_user: verify_userspi_info failed\n");
+			return -EINVAL;
+		}
 		break;
 
 	default:

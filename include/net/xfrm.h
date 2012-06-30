@@ -193,6 +193,19 @@ struct xfrm_state
 	/* Private data of this transformer, format is opaque,
 	 * interpreted by xfrm_type methods. */
 	void			*data;
+
+//Marco
+//Francesco (tfc unitn)
+	/* Parameters of TFC */
+	int initialized;
+	struct timer_list	tfc_alg_timer;
+	struct rtable		*dummy_route;
+	struct sk_buff_head	tfc_list;
+	struct sk_buff_head	dummy_list;
+	struct sk_buff_head	tfc_defrag_list;
+	__u8			tfc;
+	struct tfcparameters	tfc_param;
+
 };
 
 /* xflags - make enum if more show up */
@@ -863,7 +876,8 @@ static inline int xfrm_id_proto_match(u8 proto, u8 userproto)
 	return (!userproto || proto == userproto ||
 		(userproto == IPSEC_PROTO_ANY && (proto == IPPROTO_AH ||
 						  proto == IPPROTO_ESP ||
-						  proto == IPPROTO_COMP)));
+						  proto == IPPROTO_COMP ||
+						  proto == IPPROTO_TFC))); // FMA added "|| proto == IPPROTO_TFC" 
 }
 
 /*

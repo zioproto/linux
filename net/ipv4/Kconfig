@@ -363,6 +363,28 @@ config INET_XFRM_TUNNEL
 	select INET_TUNNEL
 	default n
 
+config TFC
+	select XFRM
+	default m
+	tristate "TFC transformations"
+	---help---
+	  TFC functions
+	  
+#config TFC_HOOK
+#	depends on TFC
+#	default m
+#	select NETFILTER
+#	tristate "TFC: hook binding"
+#	---help---
+#	  load if you want TFC to work using NETFILTER hooks
+
+config TFC_HANDLER
+	depends on TFC
+	default m
+	tristate "TFC: handler binding"
+	---help---
+	  load if you want TFC to work using protocol handlers
+
 config INET_TUNNEL
 	tristate
 	default n

@@ -146,4 +146,18 @@ struct ip_beet_phdr {
 	__u8 reserved;
 };
 
+struct ip_tfc_hdr {
+	__u8 nexthdr;
+	__u8 flags;
+	__u16 payloadsize;
+	__be32 spi;
+// 	__be32 seq_no;
+};
+
+struct ip_frag_hdr {
+	__u8 nexthdr;
+	__u8 identif;
+	__u16 offset;
+};
+
 #endif	/* _LINUX_IP_H */

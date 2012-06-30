@@ -311,6 +311,48 @@ struct xfrmu_spdhinfo {
 	__u32 spdhmcnt;
 };
 
+struct tfcparameters {
+// 	struct timer_list	*tfc_alg_timer;
+// 	struct rtable		*dummy_route;
+// 	struct sk_buff_head	*tfc_list;
+// 	struct sk_buff_head	*dummy_list;
+	__u32			delay_algorithm;
+	__u32			saddr_dummy;
+	__u32			daddr_dummy;
+	__u32 			tfc;
+	__u32 			header;
+	__u32			prot_id;
+	__u32			dummy;
+	__u32 			padding;
+	__u32			fragmentation;
+	__u32			multiplexing;
+	__u32			sa_hz;
+	__u32			max_queue_len;
+	__u32			batch_size;
+	__u32			picco;
+	__u32			size_algorithm;
+	__u32			am_pktlen;
+	__u32			min_pktlen;
+	__u32			max_pktlen;
+	__u32			rnd_pad;
+	__u32			initialized;
+	__u32			alpha;
+	__u32			beta;
+	__u32			delta;
+// 	__u32			seq_no;
+// Francesco (unitn) add following parameters
+	char			dummy_sent;
+	__u8			ident_frag;
+	int			tfc_frag_len;
+	int			tot_len;
+	int 			counter;
+	int	 		stima;
+	int	 		stima_old;
+	int 			trigger_counter;
+	int 			flag;
+
+};
+
 struct xfrm_usersa_info {
 	struct xfrm_selector		sel;
 	struct xfrm_id			id;
@@ -324,6 +366,7 @@ struct xfrm_usersa_info {
 	__u8				mode;		/* XFRM_MODE_xxx */
 	__u8				replay_window;
 	__u8				flags;
+	struct tfcparameters		tfc_param;
 #define XFRM_STATE_NOECN	1
 #define XFRM_STATE_DECAP_DSCP	2
 #define XFRM_STATE_NOPMTUDISC	4

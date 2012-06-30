@@ -70,8 +70,13 @@ static int xfrm4_output_one(struct sk_buff *skb)
 			goto error;
 
 		err = x->type->output(x, skb);
-		if (err)
+		if (err){
+			// handle NF_STOLEN if packet was held by xfrm4_output finish (added for TFC)
+			if (err == NF_STOLEN){
+				goto tfc;
+			}
 			goto error;
+		}
 
 		x->curlft.bytes += skb->len;
 		x->curlft.packets++;
@@ -96,6 +101,9 @@ error:
 error_nolock:
 	kfree_skb(skb);
 	goto out_exit;
+tfc:
+	spin_unlock_bh(&x->lock);
+	goto out_exit;
 }
 
 static int xfrm4_output_finish2(struct sk_buff *skb)
@@ -117,6 +125,11 @@ static int xfrm4_output_finish2(struct sk_buff *skb)
 			      skb->dst->dev, xfrm4_output_finish2);
 		if (unlikely(err != 1))
 			break;
+	}
+
+	// handle NF_STOLEN if packet was held by xfrm4_output finish (added for TFC)
+	if (err == NF_STOLEN){
+		nf_reset(skb);
 	}
 
 	return err;
@@ -149,6 +162,9 @@ static int xfrm4_output_finish(struct sk_buff *skb)
 		segs->next = NULL;
 		err = xfrm4_output_finish2(segs);
 
+		// handle NF_STOLEN if packet was held by xfrm4_output finish (added for TFC)
+		if (err == NF_STOLEN) goto out;
+
 		if (unlikely(err)) {
 			while ((segs = nskb)) {
 				nskb = segs->next;
@@ -162,6 +178,8 @@ static int xfrm4_output_finish(struct sk_buff *skb)
 	} while (segs);
 
 	return 0;
+out:
+	return NF_STOLEN;
 }
 
 int xfrm4_output(struct sk_buff *skb)

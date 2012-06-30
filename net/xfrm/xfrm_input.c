@@ -51,6 +51,13 @@ int xfrm_parse_spi(struct sk_buff *skb, u8 nexthdr, __be32 *spi, __be32 *seq)
 	int offset, offset_seq;
 
 	switch (nexthdr) {
+	case IPPROTO_TFC:
+		offset = offsetof(struct ip_tfc_hdr, spi);
+		if (!pskb_may_pull(skb, 8))
+		return -EINVAL;
+		*spi = *(__be32*)(skb->transport_header + offset);
+		*seq = 0;
+		return 0;
 	case IPPROTO_AH:
 		offset = offsetof(struct ip_auth_hdr, spi);
 		offset_seq = offsetof(struct ip_auth_hdr, seq_no);
