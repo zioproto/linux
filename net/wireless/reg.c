@@ -57,17 +57,19 @@ struct ieee80211_regdomain {
  */
 static const struct ieee80211_channel_range ieee80211_US_channels[] = {
 	/* IEEE 802.11b/g, channels 1..11 */
-	RANGE_PWR(2412, 2462, 27, 6, 0),
+	//RANGE_PWR(2412, 2462, 27, 6, 0),
+	 RANGE_PWR(2412, 2732, 27, 6, 0),
 	/* IEEE 802.11a, channel 36*/
-	RANGE_PWR(5180, 5180, 23, 6, 0),
+	//RANGE_PWR(5180, 5180, 23, 6, 0),
 	/* IEEE 802.11a, channel 40*/
-	RANGE_PWR(5200, 5200, 23, 6, 0),
+	//RANGE_PWR(5200, 5200, 23, 6, 0),
 	/* IEEE 802.11a, channel 44*/
-	RANGE_PWR(5220, 5220, 23, 6, 0),
+	//RANGE_PWR(5220, 5220, 23, 6, 0),
 	/* IEEE 802.11a, channels 48..64 */
-	RANGE_PWR(5240, 5320, 23, 6, 0),
+	//RANGE_PWR(5240, 5320, 23, 6, 0),
 	/* IEEE 802.11a, channels 149..165, outdoor */
-	RANGE_PWR(5745, 5825, 30, 6, 0),
+	//RANGE_PWR(5745, 5825, 30, 6, 0),
+	 RANGE_PWR(5135, 6100, 30, 6, 0),
 };
 
 static const struct ieee80211_channel_range ieee80211_JP_channels[] = {
@@ -116,7 +118,9 @@ static const struct ieee80211_regdomain *get_regdom(void)
 	static const struct ieee80211_channel_range
 	ieee80211_world_channels[] = {
 		/* IEEE 802.11b/g, channels 1..11 */
-		RANGE_PWR(2412, 2462, 27, 6, 0),
+		//RANGE_PWR(2412, 2462, 27, 6, 0),
+		RANGE_PWR(2412, 2732, 27, 6, 0),
+
 	};
 	static const struct ieee80211_regdomain regdom_world = REGDOM(world);
 	int i;

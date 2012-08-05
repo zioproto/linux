@@ -23,7 +23,7 @@
  * long and results timeouts). It's also illegal to tune to some of the
  * supported frequencies in some countries, so use this at your own risk,
  * you've been warned. */
-#define CHAN_DEBUG	0
+#define CHAN_DEBUG	1
 
 #include <linux/io.h>
 #include <linux/types.h>
