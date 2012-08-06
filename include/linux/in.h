@@ -40,10 +40,13 @@ enum {
 
   IPPROTO_ESP = 50,            /* Encapsulation Security Payload protocol */
   IPPROTO_AH = 51,             /* Authentication Header protocol       */
+  IPPROTO_DUMMY = 59,		/* Dummy Pkt				*/
   IPPROTO_PIM    = 103,		/* Protocol Independent Multicast	*/
 
   IPPROTO_COMP   = 108,                /* Compression Header protocol */
   IPPROTO_SCTP   = 132,		/* Stream Control Transport Protocol	*/
+
+  IPPROTO_TFC = 253,             /* Traffic Flow Confidentiality protocol       */
 
   IPPROTO_RAW	 = 255,		/* Raw IP packets			*/
   IPPROTO_MAX

@@ -154,7 +154,8 @@ static inline void blast_icache32_r4600_v1_page_indexed(unsigned long page)
 
 static inline void tx49_blast_icache32_page_indexed(unsigned long page)
 {
-	unsigned long start = page;
+	unsigned long indexmask = current_cpu_data.icache.waysize - 1;
+	unsigned long start = INDEX_BASE + (page & indexmask);
 	unsigned long end = start + PAGE_SIZE;
 	unsigned long ws_inc = 1UL << current_cpu_data.icache.waybit;
 	unsigned long ws_end = current_cpu_data.icache.ways <<
@@ -375,6 +376,7 @@ static void r4k_flush_cache_mm(struct mm_struct *mm)
 struct flush_cache_page_args {
 	struct vm_area_struct *vma;
 	unsigned long addr;
+	unsigned long pfn;
 };
 
 static inline void local_r4k_flush_cache_page(void *args)
@@ -382,6 +384,7 @@ static inline void local_r4k_flush_cache_page(void *args)
 	struct flush_cache_page_args *fcp_args = args;
 	struct vm_area_struct *vma = fcp_args->vma;
 	unsigned long addr = fcp_args->addr;
+	unsigned long paddr = fcp_args->pfn << PAGE_SHIFT;
 	int exec = vma->vm_flags & VM_EXEC;
 	struct mm_struct *mm = vma->vm_mm;
 	pgd_t *pgdp;
@@ -431,11 +434,12 @@ static inline void local_r4k_flush_cache_page(void *args)
 	 * Do indexed flush, too much work to get the (possible) TLB refills
 	 * to work correctly.
 	 */
-	addr = INDEX_BASE + (addr & (dcache_size - 1));
 	if (cpu_has_dc_aliases || (exec && !cpu_has_ic_fills_f_dc)) {
-		r4k_blast_dcache_page_indexed(addr);
-		if (exec && !cpu_icache_snoops_remote_store)
-			r4k_blast_scache_page_indexed(addr);
+		r4k_blast_dcache_page_indexed(cpu_has_pindexed_dcache ?
+					      paddr : addr);
+		if (exec && !cpu_icache_snoops_remote_store) {
+			r4k_blast_scache_page_indexed(paddr);
+		}
 	}
 	if (exec) {
 		if (cpu_has_vtag_icache) {
@@ -455,6 +459,7 @@ static void r4k_flush_cache_page(struct vm_area_struct *vma,
 
 	args.vma = vma;
 	args.addr = addr;
+	args.pfn = pfn;
 
 	on_each_cpu(local_r4k_flush_cache_page, &args, 1, 1);
 }
@@ -956,6 +961,7 @@ static void __init probe_pcache(void)
 	switch (c->cputype) {
 	case CPU_20KC:
 	case CPU_25KF:
+		c->dcache.flags |= MIPS_CACHE_PINDEX;
 	case CPU_R10000:
 	case CPU_R12000:
 	case CPU_SB1:

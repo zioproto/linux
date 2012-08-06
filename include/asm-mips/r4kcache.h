@@ -37,7 +37,7 @@
 	"	cache	%0, %1					\n"	\
 	"	.set	pop					\n"	\
 	:								\
-	: "i" (op), "m" (*(unsigned char *)(addr)))
+	: "i" (op), "R" (*(unsigned char *)(addr)))
 
 static inline void flush_icache_line_indexed(unsigned long addr)
 {
@@ -257,7 +257,8 @@ static inline void blast_##pfx##cache##lsize##_page(unsigned long page)	\
 									\
 static inline void blast_##pfx##cache##lsize##_page_indexed(unsigned long page) \
 {									\
-	unsigned long start = page;					\
+	unsigned long indexmask = current_cpu_data.desc.waysize - 1;	\
+	unsigned long start = INDEX_BASE + (page & indexmask);		\
 	unsigned long end = start + PAGE_SIZE;				\
 	unsigned long ws_inc = 1UL << current_cpu_data.desc.waybit;	\
 	unsigned long ws_end = current_cpu_data.desc.ways <<		\

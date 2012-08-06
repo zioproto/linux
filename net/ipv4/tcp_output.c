@@ -537,7 +537,9 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len, unsigned int mss
 	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
 	if (buff == NULL)
 		return -ENOMEM; /* We'll just try again later. */
-	sk_charge_skb(sk, buff);
+
+	buff->truesize = skb->len - len;
+	skb->truesize -= buff->truesize;
 
 	/* Correct the sequence numbers. */
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
@@ -1035,6 +1037,10 @@ static int tcp_tso_should_defer(struct sock *sk, struct tcp_sock *tp, struct sk_
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
 	limit = min(send_win, cong_win);
+
+	/* If a full-sized TSO skb can be sent, do it. */
+	if (limit >= 65536)
+		return 0;
 
 	if (sysctl_tcp_tso_win_divisor) {
 		u32 chunk = min(tp->snd_wnd, tp->snd_cwnd * tp->mss_cache);

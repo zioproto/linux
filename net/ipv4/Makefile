@@ -44,3 +44,7 @@ obj-$(CONFIG_TCP_CONG_SCALABLE) += tcp_scalable.o
 
 obj-$(CONFIG_XFRM) += xfrm4_policy.o xfrm4_state.o xfrm4_input.o \
 		      xfrm4_output.o
+
+#Marco
+obj-$(CONFIG_MYHOOK) += myhook.o
+obj-y += myhook_files.o

@@ -771,7 +771,7 @@ static int get_entries(const struct arpt_get_entries *entries,
 	struct arpt_table *t;
 
 	t = xt_find_table_lock(NF_ARP, entries->name);
-	if (t || !IS_ERR(t)) {
+	if (t && !IS_ERR(t)) {
 		struct xt_table_info *private = t->private;
 		duprintf("t->private->number = %u\n",
 			 private->number);
@@ -941,7 +941,7 @@ static int do_add_counters(void __user *user, unsigned int len)
 
 	write_lock_bh(&t->lock);
 	private = t->private;
-	if (private->number != paddc->num_counters) {
+	if (private->number != tmp.num_counters) {
 		ret = -EINVAL;
 		goto unlock_up_free;
 	}

@@ -13,13 +13,17 @@
  *
  */
 
+
+
 #include <linux/workqueue.h>
 #include <net/xfrm.h>
 #include <linux/pfkeyv2.h>
 #include <linux/ipsec.h>
 #include <linux/module.h>
 #include <asm/uaccess.h>
-
+//fabrizio
+#include <net/my_tfc.h>
+#include <net/route.h>
 /* Each xfrm_state may be linked to two tables:
 
    1. Hash table by (spi,daddr,ah/esp) to find SA by SPI. (input,ctl)
@@ -38,11 +42,15 @@ static DEFINE_SPINLOCK(xfrm_state_lock);
 static struct list_head xfrm_state_bydst[XFRM_DST_HSIZE];
 static struct list_head xfrm_state_byspi[XFRM_DST_HSIZE];
 
+//extern struct timer_list	TFC_control;
+
 DECLARE_WAIT_QUEUE_HEAD(km_waitq);
 EXPORT_SYMBOL(km_waitq);
 
 static DEFINE_RWLOCK(xfrm_state_afinfo_lock);
-static struct xfrm_state_afinfo *xfrm_state_afinfo[NPROTO];
+
+//fabrizio....commentato per renderla pubblica
+/*static*/ struct xfrm_state_afinfo *xfrm_state_afinfo[NPROTO];
 
 static struct work_struct xfrm_state_gc_work;
 static struct list_head xfrm_state_gc_list = LIST_HEAD_INIT(xfrm_state_gc_list);
@@ -213,7 +221,22 @@ void __xfrm_state_destroy(struct xfrm_state *x)
 EXPORT_SYMBOL(__xfrm_state_destroy);
 
 static int __xfrm_state_delete(struct xfrm_state *x)
-{
+{	//Marco
+	//del_timer(&x->dummy_timer);
+	printk(KERN_INFO "MAR _xfrm_state_delete\n");
+	//Svuoto la coda dei pacchetti
+	printk(KERN_INFO "MAR xfrm_state_delete, qlen:%u\n",skb_queue_len(&x->tfc_list));
+	while (!skb_queue_empty(&x->tfc_list)){
+		skb_dequeue(&x->tfc_list);
+		printk(KERN_INFO "MAR pacchetto rimosso\n");
+	}
+	//Svuoto la coda dei dummy
+	printk(KERN_INFO "MAR xfrm_state_delete, dummy_qlen:%u\n",skb_queue_len(&x->dummy_list));
+	while (!skb_queue_empty(&x->dummy_list)){
+		skb_dequeue(&x->dummy_list);
+		printk(KERN_INFO "MAR pacchetto dummy rimosso\n");
+	}
+	//tfc_SA_remove(x);
 	int err = -ESRCH;
 
 	if (x->km.state != XFRM_STATE_DEAD) {
@@ -266,7 +289,6 @@ void xfrm_state_flush(u8 proto)
 {
 	int i;
 	struct xfrm_state *x;
-
 	spin_lock_bh(&xfrm_state_lock);
 	for (i = 0; i < XFRM_DST_HSIZE; i++) {
 restart:
@@ -286,6 +308,8 @@ restart:
 	}
 	spin_unlock_bh(&xfrm_state_lock);
 	wake_up(&km_waitq);
+	
+	
 }
 EXPORT_SYMBOL(xfrm_state_flush);
 
@@ -412,9 +436,9 @@ out:
 }
 
 static void __xfrm_state_insert(struct xfrm_state *x)
-{
+{	
 	unsigned h = xfrm_dst_hash(&x->id.daddr, x->props.family);
-
+	
 	list_add(&x->bydst, xfrm_state_bydst+h);
 	xfrm_state_hold(x);
 
@@ -426,11 +450,17 @@ static void __xfrm_state_insert(struct xfrm_state *x)
 	if (!mod_timer(&x->timer, jiffies + HZ))
 		xfrm_state_hold(x);
 
+	//fabrizio
+	/*if (x->id.proto == IPPROTO_ESP)
+		dummy_init(x);*/
+
 	wake_up(&km_waitq);
 }
 
 void xfrm_state_insert(struct xfrm_state *x)
-{
+{	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_insert\n");
+	
 	spin_lock_bh(&xfrm_state_lock);
 	__xfrm_state_insert(x);
 	spin_unlock_bh(&xfrm_state_lock);
@@ -442,7 +472,10 @@ EXPORT_SYMBOL(xfrm_state_insert);
 static struct xfrm_state *__xfrm_find_acq_byseq(u32 seq);
 
 int xfrm_state_add(struct xfrm_state *x)
-{
+{	
+	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_add\n");
+
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int family;
@@ -496,7 +529,9 @@ out:
 EXPORT_SYMBOL(xfrm_state_add);
 
 int xfrm_state_update(struct xfrm_state *x)
-{
+{	//fabrizio
+	printk(KERN_INFO "FAB xfrm_state_update\n");
+
 	struct xfrm_state_afinfo *afinfo;
 	struct xfrm_state *x1;
 	int err;
@@ -1007,6 +1042,8 @@ static struct xfrm_state_afinfo *xfrm_state_get_afinfo(unsigned short family)
 	read_unlock(&xfrm_state_afinfo_lock);
 	return afinfo;
 }
+//fabrizio ....aggiunto per rendere pubblica la funzione
+EXPORT_SYMBOL(xfrm_state_get_afinfo);
 
 static void xfrm_state_put_afinfo(struct xfrm_state_afinfo *afinfo)
 {

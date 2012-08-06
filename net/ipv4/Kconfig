@@ -404,6 +404,11 @@ config INET_IPCOMP
 	  
 	  If unsure, say Y.
 
+config MYHOOK
+	tristate "TFC MYHOOK"
+	help
+		say YES :-)
+	  
 config INET_TUNNEL
 	tristate "IP: tunnel transformation"
 	select XFRM
